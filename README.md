@@ -11,7 +11,7 @@ Built as an **extensible game platform, not a single game** — new games are
 self-contained modules that appear in the lobby automatically (see
 [Adding a new game](#adding-a-new-game)).
 
-## Games (v1 lineup)
+## Games
 
 | Game | What it is | Players |
 |------|------------|---------|
@@ -19,6 +19,11 @@ self-contained modules that appear in the lobby automatically (see
 | **Werewolf** | Social deduction — night dims the lounge for secret wolf/seer prompts, day is debate + vote, eliminations get a spotlight reveal | 4–8 |
 | **Trivia Podiums** | Quiz show — buzz in for a spotlight + camera push-in, correct answers flash green | 2–8 |
 | **Tag Arena** | Real-time chase — one player is "it", tag transfers on contact, 60s timer (WASD/arrows + touch joystick) | 2–8 |
+| **Quick Draw Duel** | High-noon showdown — countdown → GO! Fastest reaction wins. Best of 5. Fire early = instant loss | **2 only** |
+| **Tug of War** | Rapid tap to pull a rope across a chasm. Rope visibly sags and tenses. First to drag marker to your threshold wins | **2 only** |
+| **Fog Duel** | 3D battleship — secretly place a fleet on your grid, then take turns calling shots on the opponent's fogged grid | **2 only** |
+
+The lobby carousel shows **all games**, graying out ones that need more players than currently in the room — a 2-player room always sees the three duel games as playable.
 
 ## Quick start
 
@@ -66,6 +71,7 @@ games/
   registry.ts                 # shared GameModule interface
   index.tsx                   # registry + per-game lazy loader
   sculptionary.tsx | werewolf.tsx | trivia.tsx | tag.tsx
+  quickdraw.tsx | tugofwar.tsx | fogduel.tsx
 components/
   LobbyScene.tsx | Avatar3D.tsx | PortalTransition.tsx |
   Scoreboard.tsx | RecapPodium.tsx
@@ -122,7 +128,9 @@ npm start        # serve production build
 
 ## Definition of done (status)
 
-- [x] Two clients can create, join by code, and finish a round of all four games (local backend)
+- [x] Room minimum lowered to 2; lobby shows all games with clear "needs N+ players" labels for ineligible ones
+- [x] Two clients can create, join by code, and finish a round of all 7 games (local backend)
+- [x] Three new 2-player duel games complete full rounds without errors
 - [x] One shared lobby↔game transition across all games
 - [x] Scores persist across a multi-game session; recap crowns the winner
 - [x] Production build is clean; all routes serve 200

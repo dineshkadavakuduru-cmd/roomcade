@@ -56,9 +56,9 @@ export default function Landing() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center px-4 py-10">
       <div className="landing-hero text-center">
-        <div className="font-display inline-block rounded-full border border-white/15 bg-white/5 px-4 py-1 text-xs font-bold uppercase tracking-[.25em] text-white/70">
-          No accounts · No installs · 3–8 players
-        </div>
+          <div className="font-display inline-block rounded-full border border-white/15 bg-white/5 px-4 py-1 text-xs font-bold uppercase tracking-[.25em] text-white/70">
+            No accounts · No installs · 2–8 players
+          </div>
         <h1 className="font-display mt-4 text-5xl font-extrabold leading-none tracking-tight md:text-7xl">
           ROOM<span style={{ background: 'linear-gradient(135deg,#FF8A00,#FF6B35 45%,#FF54BB)', WebkitBackgroundClip: 'text', color: 'transparent' }}>CADE</span>
         </h1>
@@ -72,7 +72,7 @@ export default function Landing() {
         <div className="marquee-track">
           {Array.from({ length: 2 }).map((_, k) => (
             <span key={k}>
-              {'No accounts ✦ No installs ✦ 3–8 players ✦ Scores carry all night ✦ '.repeat(3)}
+              {'No accounts ✦ No installs ✦ 2–8 players ✦ Scores carry all night ✦ '.repeat(3)}
             </span>
           ))}
         </div>

@@ -102,9 +102,15 @@ export default function Lobby() {
           </Suspense>
           <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2">
             <button onClick={() => setSel((s) => (s + GAME_LIST.length - 1) % GAME_LIST.length)} className="arcade-card px-3 py-2 font-bold">‹</button>
-            <div className="arcade-card lobby-pop flex-1 px-3 py-2 text-center">
+            <div
+              className={`arcade-card lobby-pop flex-1 cursor-pointer px-3 py-2 text-center ${eligible ? 'ring-2 ring-white/25' : 'opacity-40'}`}
+              onClick={() => eligible && setSel(sel)}
+              role="button"
+              aria-disabled={!eligible}
+            >
               <span className="font-display font-extrabold" style={{ color: game.accent }}>{game.displayName}</span>
               <span className="text-sm text-white/60"> · {game.tagline} · {game.minPlayers}–{game.maxPlayers} players</span>
+              {!eligible && <span className="ml-1 text-xs font-bold text-[#FB4D6D]">(needs {game.minPlayers}+)</span>}
             </div>
             <button onClick={() => setSel((s) => (s + 1) % GAME_LIST.length)} className="arcade-card px-3 py-2 font-bold">›</button>
           </div>
@@ -115,12 +121,19 @@ export default function Lobby() {
             <PreviewCanvas id={game.id} />
           </div>
           {isHost ? (
-            <button onClick={startGame} disabled={!eligible}
-              className="btn-neon rounded-2xl px-4 py-3 font-display text-lg font-extrabold disabled:opacity-40">
+            <button
+              onClick={startGame}
+              disabled={!eligible}
+              className="btn-neon w-full px-4 py-3 font-display text-lg font-extrabold disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50"
+            >
               {eligible ? `▶ Start ${game.displayName}` : `Need ${game.minPlayers}+ players (${room?.players.length ?? 0} here)`}
             </button>
           ) : (
-            <div className="arcade-card p-3 text-center text-sm text-white/70">Waiting for host to start…<br />Cartridge: <b style={{ color: game.accent }}>{game.displayName}</b></div>
+            <div className="arcade-card p-3 text-center text-sm text-white/70">
+              {eligible
+                ? `Waiting for host to start… Cartridge: ${game.displayName}`
+                : `Waiting — ${game.displayName} needs ${game.minPlayers} players (${room?.players.length ?? 0} here)`}
+            </div>
           )}
           <Scoreboard players={room?.players ?? []} compact />
           {isHost && (
