@@ -95,9 +95,16 @@ export default function Landing() {
         <div className="flex flex-col gap-4">
           <div className="landing-card arcade-card p-5">
             <div className="font-display text-lg font-extrabold">Start a game night</div>
-            <button onClick={doCreate} disabled={busy} className="btn-neon mt-2 w-full px-4 py-3 font-display text-lg font-extrabold disabled:opacity-50">
-              {busy ? '…' : '＋ Create room'}
-            </button>
+            <div className="relative">
+              <button onClick={doCreate} disabled={busy || !name.trim()} className="btn-neon mt-2 w-full px-4 py-3 font-display text-lg font-extrabold disabled:opacity-50 disabled:cursor-not-allowed">
+                {busy ? '…' : '＋ Create room'}
+              </button>
+              {!name.trim() && (
+                <p className="mt-1.5 text-center text-xs font-medium text-white/50">
+                  Enter a display name first
+                </p>
+              )}
+            </div>
           </div>
           <div className="landing-card arcade-card p-5">
             <div className="font-display text-lg font-extrabold">Join with a code</div>
@@ -112,7 +119,7 @@ export default function Landing() {
         </div>
       </div>
 
-      <div className="mt-8 grid w-full grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mt-8 grid w-full grid-cols-2 gap-3 md:grid-cols-4" style={{ overflow: 'visible' }}>
         {games.map((g) => (
           <div key={g.n} className="landing-card arcade-card relative p-4 pt-6" style={{ boxShadow: `inset 0 -3px 0 ${g.c}55, inset 0 1px 0 rgba(255,255,255,.16)` }}>
             <span className="sticker absolute -top-3 left-3" style={{ background: g.c, color: '#0d0d24', borderColor: '#FFF6E9', transform: `rotate(${g.tilt})` }}>
