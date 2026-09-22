@@ -127,18 +127,21 @@ function applyAction(state: LiveState, action: Action): LiveState {
         });
         if (allHit) sunkId = shipId;
       }
-      const nextTurn = hit ? action.uid : (action.uid === u1 ? u2 : u1);
-      const oppShips = isU1 ? s.oppShips : s.myShips;
-      const winner = oppShips.every((ship) => ship.sunk) ? action.uid : null;
+      const nextTurn = hit ? action.uid : (action.uid === u1 ? u2! : u1!);
+      const newOppShips = isU1
+        ? s.oppShips.map((ship) => (sunkId && ship.id === sunkId ? { ...ship, sunk: true } : ship))
+        : s.oppShips;
+      const newMyShips = isU1
+        ? s.myShips
+        : s.myShips.map((ship) => (sunkId && ship.id === sunkId ? { ...ship, sunk: true } : ship));
+      const winner = newOppShips.length > 0 && newOppShips.every((ship) => ship.sunk) ? action.uid : null;
       return {
         ...s,
         oppGrid: newOppGrid,
         turn: nextTurn,
         myGrid: isU1 ? s.myGrid : newOppGrid,
-        oppShips: isU1
-          ? s.oppShips.map((ship) => (sunkId && ship.id === sunkId ? { ...ship, sunk: true } : ship))
-          : s.oppShips,
-        myShips: isU1 ? s.myShips : s.myShips.map((ship) => (sunkId && ship.id === sunkId ? { ...ship, sunk: true } : ship)),
+        oppShips: newOppShips,
+        myShips: newMyShips,
         winner,
         phase: winner ? 'done' : 'playing',
       };

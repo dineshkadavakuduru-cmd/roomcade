@@ -45,8 +45,7 @@ function applyAction(state: LiveState, action: Action): LiveState {
   const s = state as WState;
   switch (action.type) {
     case 'start': {
-      const roles = dealRoles(action.payload.playerUids);
-      return { ...init(action.payload.playerUids), phase: 'night', roles, dayNum: 1 };
+      return { ...init(action.payload.playerUids), phase: 'night', roles: action.payload.roles, dayNum: 1 };
     }
     case 'wolf-kill':
       return { ...s, nightKill: action.payload.target };
@@ -158,7 +157,10 @@ function GameScene({ roomCode }: { roomCode: string }) {
             <div className="font-display text-lg font-extrabold">Werewolf</div>
             <p className="text-sm text-white/70">Secret roles. Night dims the lounge — wolves hunt, the seer peeks. Day: debate & vote. Spotlight reveals the fallen.</p>
             {isHost
-              ? <button onClick={() => act('start', { playerUids: room?.players.map((p) => p.uid) ?? [] })} className="btn-neon mt-2 w-full rounded-xl px-3 py-2 text-sm font-bold">Deal roles & start night</button>
+               ? <button onClick={() => {
+                   const uids = room?.players.map((p) => p.uid) ?? [];
+                   act('start', { playerUids: uids, roles: dealRoles(uids) });
+                 }} className="btn-neon mt-2 w-full rounded-xl px-3 py-2 text-sm font-bold">Deal roles & start night</button>
               : <p className="mt-2 text-sm text-white/60">Waiting for host…</p>}
           </div>
         )}

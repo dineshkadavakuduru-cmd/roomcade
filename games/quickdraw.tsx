@@ -125,6 +125,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const [room, setRoom] = useState<RoomMeta | null>(null);
   const [now, setNow] = useState(Date.now());
   const [screenFlash, setScreenFlash] = useState(false);
+  const awardedRef = useRef(false);
   useEffect(() => subscribeLive(roomCode, (s) => setL((s as QState) ?? null)), [roomCode]);
   useEffect(() => subscribeRoom(roomCode, setRoom), [roomCode]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 50); return () => clearInterval(t); }, []);
@@ -152,7 +153,8 @@ function GameScene({ roomCode }: { roomCode: string }) {
   }, [live?.phase, live?.roundWinner]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (live?.winner) {
+    if (live?.winner && !awardedRef.current) {
+      awardedRef.current = true;
       awardScores(roomCode, { [live.winner]: 200 });
     }
   }, [live?.winner]); // eslint-disable-line react-hooks/exhaustive-deps

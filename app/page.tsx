@@ -49,8 +49,8 @@ export default function Landing() {
   const games = useMemo(() => [
     { n: 'Sculptionary', d: 'Sculpt words in 3D', c: '#FF6B35', tag: '3D!', tilt: '-3deg' },
     { n: 'Werewolf', d: 'Night-fall deduction', c: '#8B5CF6', tag: 'sus', tilt: '2deg' },
-    { n: 'Trivia Podiums', d: 'Buzz in, shine bright', c: '#FFC53D', tag: 'buzz', tilt: '-2deg' },
-    { n: 'Tag Arena', d: '60 seconds of chase', c: '#38BDF8', tag: 'run', tilt: '3deg' },
+    { n: 'Truth or Dare', d: 'Confess or commit', c: '#FF3D81', tag: '🔥', tilt: '-2deg' },
+    { n: 'Movie Trivia', d: 'Lights, camera, buzz!', c: '#FFC53D', tag: '🎬', tilt: '3deg' },
   ], []);
 
   return (

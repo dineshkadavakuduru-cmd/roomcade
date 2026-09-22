@@ -8,6 +8,8 @@ import { TagArena } from './tag';
 import { QuickDraw } from './quickdraw';
 import { TugOfWar } from './tugofwar';
 import { FogDuel } from './fogduel';
+import { TruthOrDare } from './truthordare';
+import { MovieTrivia } from './movietrivia';
 
 export const GAMES: Record<string, GameModule> = {
   sculptionary: Sculptionary,
@@ -17,36 +19,38 @@ export const GAMES: Record<string, GameModule> = {
   quickdraw: QuickDraw,
   tugofwar: TugOfWar,
   fogduel: FogDuel,
+  truthordare: TruthOrDare,
+  movietrivia: MovieTrivia,
 };
 
-export const GAME_LIST: GameModule[] = [Sculptionary, Werewolf, Trivia, TagArena, QuickDraw, TugOfWar, FogDuel];
+export const GAME_LIST: GameModule[] = [
+  Sculptionary, Werewolf, Trivia, TagArena, QuickDraw, TugOfWar, FogDuel, TruthOrDare, MovieTrivia,
+];
 
-// Lazy-load each game scene — never mount all at once.
+const LazySculptionary = dynamic(() => import('./sculptionary').then((m) => ({ default: m.Sculptionary.GameScene })), { ssr: false });
+const LazyWerewolf = dynamic(() => import('./werewolf').then((m) => ({ default: m.Werewolf.GameScene })), { ssr: false });
+const LazyTrivia = dynamic(() => import('./trivia').then((m) => ({ default: m.Trivia.GameScene })), { ssr: false });
+const LazyTag = dynamic(() => import('./tag').then((m) => ({ default: m.TagArena.GameScene })), { ssr: false });
+const LazyQuickDraw = dynamic(() => import('./quickdraw').then((m) => ({ default: m.QuickDraw.GameScene })), { ssr: false });
+const LazyTugOfWar = dynamic(() => import('./tugofwar').then((m) => ({ default: m.TugOfWar.GameScene })), { ssr: false });
+const LazyFogDuel = dynamic(() => import('./fogduel').then((m) => ({ default: m.FogDuel.GameScene })), { ssr: false });
+const LazyTruthOrDare = dynamic(() => import('./truthordare').then((m) => ({ default: m.TruthOrDare.GameScene })), { ssr: false });
+const LazyMovieTrivia = dynamic(() => import('./movietrivia').then((m) => ({ default: m.MovieTrivia.GameScene })), { ssr: false });
+
+const LAZY_MAP: Record<string, React.ComponentType<{ roomCode: string }>> = {
+  sculptionary: LazySculptionary,
+  werewolf: LazyWerewolf,
+  trivia: LazyTrivia,
+  tag: LazyTag,
+  quickdraw: LazyQuickDraw,
+  tugofwar: LazyTugOfWar,
+  fogduel: LazyFogDuel,
+  truthordare: LazyTruthOrDare,
+  movietrivia: LazyMovieTrivia,
+};
+
 export function LazyGameScene({ id, roomCode }: { id: string; roomCode: string }) {
-  if (id === 'sculptionary') {
-    const C = dynamic(() => import('./sculptionary').then((m) => m.Sculptionary.GameScene), { ssr: false });
-    return <C roomCode={roomCode} />;
-  }
-  if (id === 'werewolf') {
-    const C = dynamic(() => import('./werewolf').then((m) => m.Werewolf.GameScene), { ssr: false });
-    return <C roomCode={roomCode} />;
-  }
-  if (id === 'trivia') {
-    const C = dynamic(() => import('./trivia').then((m) => m.Trivia.GameScene), { ssr: false });
-    return <C roomCode={roomCode} />;
-  }
-  if (id === 'tag') {
-    const C = dynamic(() => import('./tag').then((m) => m.TagArena.GameScene), { ssr: false });
-    return <C roomCode={roomCode} />;
-  }
-  if (id === 'quickdraw') {
-    const C = dynamic(() => import('./quickdraw').then((m) => m.QuickDraw.GameScene), { ssr: false });
-    return <C roomCode={roomCode} />;
-  }
-  if (id === 'tugofwar') {
-    const C = dynamic(() => import('./tugofwar').then((m) => m.TugOfWar.GameScene), { ssr: false });
-    return <C roomCode={roomCode} />;
-  }
-  const C = dynamic(() => import('./fogduel').then((m) => m.FogDuel.GameScene), { ssr: false });
+  const C = LAZY_MAP[id];
+  if (!C) return <div className="arcade-card p-6 text-center text-white/60">Unknown game — head back to the lobby.</div>;
   return <C roomCode={roomCode} />;
 }

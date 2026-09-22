@@ -93,6 +93,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const lastSent = useRef(0);
   const local = useRef({ x: 0, z: 0 });
   const isHost = room?.hostId === uid;
+  const awardedRef = useRef(false);
 
   useEffect(() => subscribeLive(roomCode, (s) => setL((s as TState) ?? null)), [roomCode]);
   useEffect(() => subscribeRoom(roomCode, setRoom), [roomCode]);
@@ -138,7 +139,8 @@ function GameScene({ roomCode }: { roomCode: string }) {
   }, [live?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (live?.phase === 'playing' && timeLeft <= 0) {
+    if (live?.phase === 'playing' && timeLeft <= 0 && !awardedRef.current) {
+      awardedRef.current = true;
       // winner: everyone except "it"? Spec: last untagged wins — with transfer tag,
       // the player who is NOT it at timeout wins a share; "it" loses.
       const winners = (room?.players ?? []).filter((p) => p.uid !== live.itUid);
@@ -149,6 +151,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
       });
     }
   }, [timeLeft]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (live?.phase === 'waiting') awardedRef.current = false; }, [live?.phase]);
 
   const start = () => {
     const uids = room?.players.map((p) => p.uid) ?? [];

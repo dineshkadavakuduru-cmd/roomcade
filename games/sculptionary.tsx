@@ -96,6 +96,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const me = room?.players.find((p) => p.uid === uid);
   const isSculptor = live?.sculptorUid === uid;
   const isHost = room?.hostId === uid;
+  const awardedRef = useRef(false);
 
   useEffect(() => subscribeLive(roomCode, (s) => setL((s as SState) ?? null)), [roomCode]);
   useEffect(() => subscribeRoom(roomCode, setRoom), [roomCode]);
@@ -107,13 +108,15 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const timeLeft = live?.phase === 'playing' ? Math.max(0, ROUND_SECS - Math.floor((now - live.startedAt) / 1000)) : ROUND_SECS;
 
   useEffect(() => {
-    if (live?.phase === 'playing' && timeLeft <= 0 && isHost) {
+    if (live?.phase === 'playing' && timeLeft <= 0 && isHost && !awardedRef.current) {
+      awardedRef.current = true;
       const awards: Record<string, number> = {};
       live.winnerUids.forEach((w) => { awards[w] = 100; });
       if (live.sculptorUid) awards[live.sculptorUid] = 40 * live.winnerUids.length;
       awardScores(roomCode, awards).then(() => dispatchLive(roomCode, { type: 'end', uid }, applyAction, () => init([])));
     }
   }, [timeLeft, live?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (live?.phase === 'waiting') awardedRef.current = false; }, [live?.phase]);
 
   const start = (sculptorUid: string) => {
     const uids = room?.players.map((p) => p.uid) ?? [];
