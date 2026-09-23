@@ -201,6 +201,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const [room, setRoom] = useState<RoomMeta | null>(null);
   const [placingGrid, setPlacingGrid] = useState<Grid>(emptyGrid());
   const [placingShips, setPlacingShips] = useState<{ id: string; size: number }[]>([]);
+  const placedShipsRef = useRef<{ id: string; cells: string[]; sunk: boolean }[]>([]);
   const [selectedShip, setSelectedShip] = useState<string | null>(null);
   const [horizontal, setHorizontal] = useState(true);
   const [hoverCell, setHoverCell] = useState<string | null>(null);
@@ -237,9 +238,12 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const doPlaceShip = (key: string) => {
     if (!selectedShip) return;
     const { r, c } = parseKey(key);
-    const ship = placingShips.find((s) => s.id === selectedShip)!;
+    const ship = placingShips.find((s) => s.id === selectedShip);
+    if (!ship) return;
+    if (!canPlace(placingGrid, r, c, ship.size, horizontal)) return;
     const newGrid = placeShip(placingGrid, r, c, ship.size, horizontal, ship.id);
     setPlacingGrid(newGrid);
+    placedShipsRef.current = [...placedShipsRef.current, { id: ship.id, cells: [], sunk: false }];
     const remaining = placingShips.filter((s) => s.id !== selectedShip);
     setPlacingShips(remaining);
     setSelectedShip(remaining[0]?.id ?? null);
@@ -247,7 +251,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
 
   const confirmPlacement = () => {
     if (placingShips.length > 0) return;
-    act('place', { grid: placingGrid, ships: placingShips.map((s) => ({ id: s.id, cells: [], sunk: false })) });
+    act('place', { grid: placingGrid, ships: placedShipsRef.current });
   };
 
   const fire = (key: string) => {
