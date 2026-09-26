@@ -1,15 +1,14 @@
 'use client';
 
 /**
- * Room store: Firestore for room metadata + RTDB for live state when Firebase
+ * Room store: Realtime Database (RTDB) for room metadata + live state when Firebase
  * is configured; otherwise a local same-origin backend (localStorage +
  * BroadcastChannel) so two tabs on one machine can complete the full
  * create → join → play flow with zero setup.
  */
 import { generateCode, normalizeCode, type Action, type LiveState, type Player, type RoomMeta } from './types';
 import { firebaseConfigured, getFirebase } from './firebase';
-import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
-import { onValue, ref, remove, set, type Unsubscribe } from 'firebase/database';
+import { get, onValue, ref, remove, set, update, type Unsubscribe } from 'firebase/database';
 
 const LS_ROOM = (code: string) => `roomcade:room:${code}`;
 const LS_LIVE = (code: string) => `roomcade:live:${code}`;
@@ -55,10 +54,10 @@ export async function createRoom(name: string, avatarColor: string): Promise<{ c
     };
     if (firebaseConfigured()) {
       const fb = getFirebase()!;
-      const d = doc(fb.db, 'rooms', code);
-      const existing = await getDoc(d);
+      const r = ref(fb.rtdb, `rooms/${code}/meta`);
+      const existing = await get(r);
       if (existing.exists()) continue;
-      await setDoc(d, meta);
+      await set(r, meta);
       sessionStorage.setItem('roomcade:name', name);
       sessionStorage.setItem('roomcade:color', avatarColor);
       return { code, uid };
@@ -77,15 +76,15 @@ export async function joinRoom(rawCode: string, name: string, avatarColor: strin
   const uid = getSessionUid();
   if (firebaseConfigured()) {
     const fb = getFirebase()!;
-    const d = doc(fb.db, 'rooms', code);
-    const snap = await getDoc(d);
+    const r = ref(fb.rtdb, `rooms/${code}/meta`);
+    const snap = await get(r);
     if (!snap.exists()) throw new Error('Room not found. Check the code.');
-    const meta = snap.data() as RoomMeta;
+    const meta = snap.val() as RoomMeta;
     if (meta.players.length >= 8) throw new Error('Room is full (8 max).');
     const players = meta.players.some((p) => p.uid === uid)
       ? meta.players.map((p) => (p.uid === uid ? { ...p, name, avatarColor } : p))
       : [...meta.players, { uid, name, avatarColor, score: 0 }];
-    await updateDoc(d, { players, updatedAt: Date.now() });
+    await update(r, { players, updatedAt: Date.now() });
     sessionStorage.setItem('roomcade:name', name);
     sessionStorage.setItem('roomcade:color', avatarColor);
     return uid;
@@ -108,8 +107,9 @@ export function subscribeRoom(code: string, cb: (meta: RoomMeta | null) => void)
   const c = normalizeCode(code);
   if (firebaseConfigured()) {
     const fb = getFirebase()!;
-    return onSnapshot(doc(fb.db, 'rooms', c), (snap) => {
-      cb(snap.exists() ? (snap.data() as RoomMeta) : null);
+    const r = ref(fb.rtdb, `rooms/${c}/meta`);
+    return onValue(r, (snap) => {
+      cb(snap.exists() ? (snap.val() as RoomMeta) : null);
     });
   }
   const emit = () => cb(readLocal<RoomMeta>(LS_ROOM(c)));
@@ -136,7 +136,7 @@ export async function patchRoom(code: string, patch: Partial<RoomMeta>): Promise
   const c = normalizeCode(code);
   if (firebaseConfigured()) {
     const fb = getFirebase()!;
-    await updateDoc(doc(fb.db, 'rooms', c), { ...patch, updatedAt: Date.now() });
+    await update(ref(fb.rtdb, `rooms/${c}/meta`), { ...patch, updatedAt: Date.now() });
     return;
   }
   const meta = readLocal<RoomMeta>(LS_ROOM(c));
@@ -148,12 +148,12 @@ export async function awardScores(code: string, awards: Record<string, number>):
   const c = normalizeCode(code);
   if (firebaseConfigured()) {
     const fb = getFirebase()!;
-    const d = doc(fb.db, 'rooms', c);
-    const snap = await getDoc(d);
+    const r = ref(fb.rtdb, `rooms/${c}/meta`);
+    const snap = await get(r);
     if (!snap.exists()) return;
-    const meta = snap.data() as RoomMeta;
+    const meta = snap.val() as RoomMeta;
     const players = meta.players.map((p) => ({ ...p, score: p.score + (awards[p.uid] ?? 0) }));
-    await updateDoc(d, { players, updatedAt: Date.now() });
+    await update(r, { players, updatedAt: Date.now() });
     return;
   }
   const meta = readLocal<RoomMeta>(LS_ROOM(c));
@@ -218,7 +218,6 @@ export async function dispatchLive(
   const fb = firebaseConfigured() ? getFirebase() : null;
   if (fb?.rtdb) {
     // Last-writer-wins with read-modify-write is fine at this scale (3-8 players, casual).
-    const { get } = await import('firebase/database');
     const snap = await get(ref(fb.rtdb, `rooms/${c}/live`));
     const cur = snap.exists() ? (snap.val() as LiveState) : init();
     await set(ref(fb.rtdb, `rooms/${c}/live`), apply(cur, action));
