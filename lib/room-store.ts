@@ -78,8 +78,8 @@ export async function joinRoom(rawCode: string, name: string, avatarColor: strin
     const fb = getFirebase()!;
     const r = ref(fb.rtdb, `rooms/${code}/meta`);
     const snap = await get(r);
-    if (!snap.exists()) throw new Error('Room not found. Check the code.');
-    const meta = snap.val() as RoomMeta;
+    const meta = normalizeRoomMeta(snap.val());
+    if (!meta) throw new Error('Room not found. Check the code.');
     if (meta.players.length >= 8) throw new Error('Room is full (8 max).');
     const players = meta.players.some((p) => p.uid === uid)
       ? meta.players.map((p) => (p.uid === uid ? { ...p, name, avatarColor } : p))
@@ -103,16 +103,58 @@ export async function joinRoom(rawCode: string, name: string, avatarColor: strin
   return uid;
 }
 
+function normalizeRoomMeta(val: any): RoomMeta | null {
+  if (!val) return null;
+  let raw = val;
+  if (typeof val === 'string') {
+    try {
+      raw = JSON.parse(val);
+    } catch {
+      return null;
+    }
+  }
+  let players = raw.players;
+  if (players && !Array.isArray(players) && typeof players === 'object') {
+    players = Object.values(players);
+  }
+  return {
+    code: String(raw.code || ''),
+    hostId: String(raw.hostId || ''),
+    status: raw.status || 'lobby',
+    currentGameId: raw.currentGameId || null,
+    players: Array.isArray(players) ? players : [],
+    round: Number(raw.round) || 1,
+    updatedAt: Number(raw.updatedAt) || Date.now(),
+  };
+}
+
+function parseLiveState(val: unknown): LiveState | null {
+  if (!val) return null;
+  if (typeof val === 'string') {
+    try {
+      return JSON.parse(val) as LiveState;
+    } catch {
+      return null;
+    }
+  }
+  return val as LiveState;
+}
+
+function serializeLiveState(state: LiveState | null): string | null {
+  if (state === null) return null;
+  return JSON.stringify(state);
+}
+
 export function subscribeRoom(code: string, cb: (meta: RoomMeta | null) => void): () => void {
   const c = normalizeCode(code);
   if (firebaseConfigured()) {
     const fb = getFirebase()!;
     const r = ref(fb.rtdb, `rooms/${c}/meta`);
     return onValue(r, (snap) => {
-      cb(snap.exists() ? (snap.val() as RoomMeta) : null);
+      cb(snap.exists() ? normalizeRoomMeta(snap.val()) : null);
     });
   }
-  const emit = () => cb(readLocal<RoomMeta>(LS_ROOM(c)));
+  const emit = () => cb(normalizeRoomMeta(readLocal<RoomMeta>(LS_ROOM(c))));
   emit();
   const onStorage = (e: StorageEvent) => {
     if (e.key === LS_ROOM(c)) emit();
@@ -151,7 +193,8 @@ export async function awardScores(code: string, awards: Record<string, number>):
     const r = ref(fb.rtdb, `rooms/${c}/meta`);
     const snap = await get(r);
     if (!snap.exists()) return;
-    const meta = snap.val() as RoomMeta;
+    const meta = normalizeRoomMeta(snap.val());
+    if (!meta) return;
     const players = meta.players.map((p) => ({ ...p, score: p.score + (awards[p.uid] ?? 0) }));
     await update(r, { players, updatedAt: Date.now() });
     return;
@@ -169,7 +212,7 @@ export function subscribeLive(code: string, cb: (s: LiveState | null) => void): 
   const fb = firebaseConfigured() ? getFirebase() : null;
   if (fb?.rtdb) {
     const r = ref(fb.rtdb, `rooms/${c}/live`);
-    const unsub: Unsubscribe = onValue(r, (snap) => cb(snap.exists() ? (snap.val() as LiveState) : null));
+    const unsub: Unsubscribe = onValue(r, (snap) => cb(snap.exists() ? parseLiveState(snap.val()) : null));
     return unsub;
   }
   const emit = () => cb(readLocal<LiveState>(LS_LIVE(c)));
@@ -196,8 +239,11 @@ export async function setLive(code: string, state: LiveState | null): Promise<vo
   const fb = firebaseConfigured() ? getFirebase() : null;
   if (fb?.rtdb) {
     const r = ref(fb.rtdb, `rooms/${c}/live`);
-    if (state === null) await remove(r);
-    else await set(r, state);
+    if (state === null) {
+      await remove(r);
+    } else {
+      await set(r, serializeLiveState(state));
+    }
     return;
   }
   if (state === null) {
@@ -217,10 +263,16 @@ export async function dispatchLive(
   const c = normalizeCode(code);
   const fb = firebaseConfigured() ? getFirebase() : null;
   if (fb?.rtdb) {
-    // Last-writer-wins with read-modify-write is fine at this scale (3-8 players, casual).
-    const snap = await get(ref(fb.rtdb, `rooms/${c}/live`));
-    const cur = snap.exists() ? (snap.val() as LiveState) : init();
-    await set(ref(fb.rtdb, `rooms/${c}/live`), apply(cur, action));
+    const r = ref(fb.rtdb, `rooms/${c}/live`);
+    const snap = await get(r);
+    const cur = snap.exists() ? (parseLiveState(snap.val()) ?? init()) : init();
+    const next = apply(cur, action);
+    const serialized = serializeLiveState(next);
+    if (serialized === null) {
+      await remove(r);
+    } else {
+      await set(r, serialized);
+    }
     return;
   }
   const cur = readLocal<LiveState>(LS_LIVE(c)) ?? init();

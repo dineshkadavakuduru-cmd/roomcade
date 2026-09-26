@@ -36,20 +36,20 @@ function applyAction(state: LiveState, action: Action): LiveState {
       return { ...init(action.payload.playerUids), phase: 'playing', startedAt: Date.now(),
         sculptorUid: action.payload.sculptorUid, word: action.payload.word };
     case 'add-block':
-      if (s.blocks.length >= BLOCK_LIMIT) return s;
-      return { ...s, blocks: [...s.blocks, action.payload.block] };
+      if ((s.blocks || []).length >= BLOCK_LIMIT) return s;
+      return { ...s, blocks: [...(s.blocks || []), action.payload.block] };
     case 'move-block':
-      return { ...s, blocks: s.blocks.map((b) => (b.id === action.payload.id ? { ...b, pos: action.payload.pos, scale: action.payload.scale ?? b.scale } : b)) };
+      return { ...s, blocks: (s.blocks || []).map((b) => (b.id === action.payload.id ? { ...b, pos: action.payload.pos, scale: action.payload.scale ?? b.scale } : b)) };
     case 'clear':
       return { ...s, blocks: [] };
     case 'guess': {
       const text = String(action.payload.text).trim().toLowerCase();
       if (!text || s.phase !== 'playing') return s;
       const correct = text === s.word.toLowerCase();
-      if (s.guesses.some((g) => g.uid === action.uid && g.correct)) return s;
-      const guesses = [...s.guesses.slice(-29), { uid: action.uid, name: action.payload.name, text: action.payload.text, correct, at: Date.now() }];
-      if (correct && !s.winnerUids.includes(action.uid)) {
-        return { ...s, guesses, winnerUids: [...s.winnerUids, action.uid] };
+      if ((s.guesses || []).some((g) => g.uid === action.uid && g.correct)) return s;
+      const guesses = [...(s.guesses || []).slice(-29), { uid: action.uid, name: action.payload.name, text: action.payload.text, correct, at: Date.now() }];
+      if (correct && !(s.winnerUids || []).includes(action.uid)) {
+        return { ...s, guesses, winnerUids: [...(s.winnerUids || []), action.uid] };
       }
       return { ...s, guesses };
     }
@@ -111,8 +111,8 @@ function GameScene({ roomCode }: { roomCode: string }) {
     if (live?.phase === 'playing' && timeLeft <= 0 && isHost && !awardedRef.current) {
       awardedRef.current = true;
       const awards: Record<string, number> = {};
-      live.winnerUids.forEach((w) => { awards[w] = 100; });
-      if (live.sculptorUid) awards[live.sculptorUid] = 40 * live.winnerUids.length;
+      (live.winnerUids || []).forEach((w) => { awards[w] = 100; });
+      if (live.sculptorUid) awards[live.sculptorUid] = 40 * (live.winnerUids || []).length;
       awardScores(roomCode, awards).then(() => dispatchLive(roomCode, { type: 'end', uid }, applyAction, () => init([])));
     }
   }, [timeLeft, live?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -139,7 +139,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
 
   const nudge = (dx: number, dz: number) => {
     if (!live || !selected || !isSculptor) return;
-    const b = live.blocks.find((x) => x.id === selected);
+    const b = (live.blocks || []).find((x) => x.id === selected);
     if (!b) return;
     dispatchLive(roomCode, { type: 'move-block', uid, payload: { id: selected, pos: [b.pos[0] + dx, b.pos[1], b.pos[2] + dz] } }, applyAction, () => init([]));
   };
@@ -152,12 +152,12 @@ function GameScene({ roomCode }: { roomCode: string }) {
           <ambientLight intensity={0.7} />
           <directionalLight position={[5, 8, 4]} intensity={1.1} />
           <pointLight position={[0, 5, 0]} intensity={26} distance={18} color="#ff6b35" />
-          {live && <SculptScene blocks={live.blocks} selected={selected} onSelect={(id) => isSculptor && setSelected(id)} />}
+          {live && <SculptScene blocks={live.blocks || []} selected={selected} onSelect={(id) => isSculptor && setSelected(id)} />}
           <OrbitControls enablePan={false} maxPolarAngle={Math.PI / 2.1} />
         </Canvas>
         <div className="absolute left-3 top-3 flex gap-2">
           <span className="arcade-card px-3 py-1 font-display text-lg font-extrabold text-[#FFC53D]">⏱ {timeLeft}s</span>
-          <span className="arcade-card px-3 py-1 text-sm font-semibold">🧱 {live?.blocks.length ?? 0}/{BLOCK_LIMIT}</span>
+          <span className="arcade-card px-3 py-1 text-sm font-semibold">🧱 {(live?.blocks || []).length}/{BLOCK_LIMIT}</span>
         </div>
         {live?.phase === 'playing' && isSculptor && (
           <div className="absolute left-1/2 top-3 -translate-x-1/2 arcade-card px-4 py-1 font-display text-lg font-extrabold text-[#34D399]">

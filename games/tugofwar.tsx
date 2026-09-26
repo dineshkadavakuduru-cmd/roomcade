@@ -19,10 +19,13 @@ interface TState extends LiveState {
   startedAt: number;
 }
 function init(uids: string[]): TState {
+  const tapCounts: Record<string, number> = {};
+  if (uids[0]) tapCounts[uids[0]] = 0;
+  if (uids[1]) tapCounts[uids[1]] = 0;
   return {
     phase: 'waiting',
     ropePos: 0,
-    tapCounts: { [uids[0]]: 0, [uids[1]]: 0 },
+    tapCounts,
     lastTap: {},
     winner: null,
     startedAt: 0,

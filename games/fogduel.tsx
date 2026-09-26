@@ -33,16 +33,19 @@ function emptyGrid(): Grid {
   );
 }
 function init(uids: string[]): FState {
+  const ready: Record<string, boolean> = {};
+  if (uids[0]) ready[uids[0]] = false;
+  if (uids[1]) ready[uids[1]] = false;
   return {
     phase: 'placing',
     myGrid: emptyGrid(),
     oppGrid: emptyGrid(),
     myShips: [],
     oppShips: [],
-    turn: uids[0],
+    turn: uids[0] ?? null,
     winner: null,
     placements: {},
-    ready: { [uids[0]]: false, [uids[1]]: false },
+    ready,
   };
 }
 function cellKey(r: number, c: number) { return `${r},${c}`; }

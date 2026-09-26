@@ -30,7 +30,7 @@ function applyAction(state: LiveState, action: Action): LiveState {
   const s = state as MVState;
   switch (action.type) {
     case 'ask': return { ...s, phase: 'question', qIndex: action.payload.qIndex, buzzedUid: null, buzzOrder: [], correctUid: null, picked: null };
-    case 'buzz': if (s.phase !== 'question' || s.buzzOrder.includes(action.uid)) return s; return { ...s, phase: 'buzzed', buzzedUid: action.uid, buzzOrder: [...s.buzzOrder, action.uid] };
+    case 'buzz': if (s.phase !== 'question' || (s.buzzOrder || []).includes(action.uid)) return s; return { ...s, phase: 'buzzed', buzzedUid: action.uid, buzzOrder: [...(s.buzzOrder || []), action.uid] };
     case 'answer': { const correct = action.payload.choice === QUESTIONS[s.qIndex]!.a; return correct ? { ...s, phase: 'reveal', correctUid: action.uid, picked: action.payload.choice } : { ...s, phase: 'question', buzzedUid: null, picked: action.payload.choice }; }
     case 'next': { const qIndex = s.qIndex + 1; return qIndex >= QUESTIONS.length ? { ...s, phase: 'done' } : { ...s, phase: 'question', qIndex, buzzedUid: null, buzzOrder: [], correctUid: null, picked: null }; }
     case 'end': return { ...s, phase: 'done' };
@@ -45,7 +45,7 @@ function CinemaScene({ players, buzzedUid, correctUid }: { players: RoomMeta['pl
 function GameScene({ roomCode }: { roomCode: string }) {
   const uid = useMemo(() => getSessionUid(), []); const [live, setL] = useState<MVState | null>(null); const [room, setRoom] = useState<RoomMeta | null>(null);
   useEffect(() => subscribeLive(roomCode, (s) => setL((s as MVState) ?? null)), [roomCode]); useEffect(() => subscribeRoom(roomCode, setRoom), [roomCode]);
-  const isHost = room?.hostId === uid; const q = live ? QUESTIONS[live.qIndex] : null; const myTurn = live?.buzzedUid === uid; const lockedOut = !!live && live.phase === 'question' && live.buzzOrder.includes(uid) && live.buzzOrder[0] !== uid;
+  const isHost = room?.hostId === uid; const q = live ? QUESTIONS[live.qIndex] : null; const myTurn = live?.buzzedUid === uid; const lockedOut = !!live && live.phase === 'question' && (live.buzzOrder || []).includes(uid) && (live.buzzOrder || [])[0] !== uid;
   const act = (type: string, payload: any = {}) => dispatchLive(roomCode, { type, uid, payload }, applyAction, init);
   const buzz = () => { act('buzz'); flashBuzzer('#buzz-btn', '#FF3D81'); }; const answer = (choice: number) => { const correct = choice === QUESTIONS[live!.qIndex]!.a; if (correct) { void awardScores(roomCode, { [uid]: 100 }); flashBuzzer('#mv-quiz-card', '#34D399'); } act('answer', { choice }); };
   return <div className="flex h-full flex-col gap-2 lg:flex-row"><div className="relative min-h-[300px] flex-1 overflow-hidden rounded-2xl border border-white/10"><Canvas camera={{ position: [0, 5, 10], fov: 50 }} dpr={[1, 1.75]}><color attach="background" args={['#080818']} /><ambientLight intensity={0.35} /><directionalLight position={[4, 7, 3]} intensity={0.6} />{room && <CinemaScene players={room.players} buzzedUid={live?.buzzedUid ?? null} correctUid={live?.correctUid ?? null} />}</Canvas>{q && <div className="absolute bottom-3 left-3 right-3 arcade-card px-3 py-1.5 text-center"><span className="text-xs font-bold uppercase tracking-widest text-[#FFC53D]">{q.cat}</span><span className="mx-2 text-white/30">·</span><span className="text-xs text-white/60">Q{live!.qIndex + 1} / {QUESTIONS.length}</span></div>}</div><div className="flex w-full flex-col gap-2 lg:w-96">

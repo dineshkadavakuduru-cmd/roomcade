@@ -34,8 +34,8 @@ function applyAction(state: LiveState, action: Action): LiveState {
     case 'ask':
       return { ...s, phase: 'question', qIndex: action.payload.qIndex, buzzedUid: null, buzzOrder: [], correctUid: null, picked: null };
     case 'buzz':
-      if (s.phase !== 'question' || s.buzzOrder.includes(action.uid)) return s;
-      return { ...s, phase: 'buzzed', buzzedUid: action.uid, buzzOrder: [...s.buzzOrder, action.uid] };
+      if (s.phase !== 'question' || (s.buzzOrder || []).includes(action.uid)) return s;
+      return { ...s, phase: 'buzzed', buzzedUid: action.uid, buzzOrder: [...(s.buzzOrder || []), action.uid] };
     case 'answer': {
       const correct = action.payload.choice === QUESTIONS[s.qIndex]!.a;
       if (correct) return { ...s, phase: 'reveal', correctUid: action.uid, picked: action.payload.choice };
@@ -90,7 +90,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const isHost = room?.hostId === uid;
   const q = live ? QUESTIONS[live.qIndex] : null;
   const myTurn = live?.buzzedUid === uid;
-  const lockedOut = !!live && live.phase === 'question' && live.buzzOrder.includes(uid) && live.buzzOrder[0] !== uid;
+  const lockedOut = !!live && live.phase === 'question' && (live.buzzOrder || []).includes(uid) && (live.buzzOrder || [])[0] !== uid;
 
   const act = (type: string, payload: any = {}) =>
     dispatchLive(roomCode, { type, uid, payload }, applyAction, init);

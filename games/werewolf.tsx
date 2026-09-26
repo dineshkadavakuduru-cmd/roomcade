@@ -34,8 +34,10 @@ function init(uids: string[]): WState {
 }
 
 function checkWin(s: WState): string | null {
-  const aliveW = s.alive.filter((u) => s.roles[u] === 'werewolf');
-  const aliveV = s.alive.filter((u) => s.roles[u] !== 'werewolf');
+  const alive = s.alive || [];
+  const roles = s.roles || {};
+  const aliveW = alive.filter((u) => roles[u] === 'werewolf');
+  const aliveV = alive.filter((u) => roles[u] !== 'werewolf');
   if (aliveW.length === 0) return 'villagers';
   if (aliveW.length >= aliveV.length) return 'werewolves';
   return null;
@@ -100,8 +102,8 @@ function GameScene({ roomCode }: { roomCode: string }) {
   useEffect(() => subscribeLive(roomCode, (s) => setL((s as WState) ?? null)), [roomCode]);
   useEffect(() => subscribeRoom(roomCode, setRoom), [roomCode]);
 
-  const myRole = live?.roles[uid];
-  const alive = live?.alive.includes(uid);
+  const myRole = live?.roles?.[uid];
+  const alive = live?.alive ? live.alive.includes(uid) : false;
   const isHost = room?.hostId === uid;
   const night = live?.phase === 'night';
   const nameOf = (u: string) => room?.players.find((p) => p.uid === u)?.name ?? u.slice(0, 6);
@@ -113,9 +115,9 @@ function GameScene({ roomCode }: { roomCode: string }) {
     if (live?.phase === 'ended' && isHost) {
       const awards: Record<string, number> = {};
       (room?.players ?? []).forEach((p) => {
-        const r = live.roles[p.uid];
+        const r = live.roles?.[p.uid];
         const won = (live.winner === 'werewolves' && r === 'werewolf') || (live.winner === 'villagers' && r !== 'werewolf');
-        if (won && live.alive.includes(p.uid)) awards[p.uid] = 150;
+        if (won && (live.alive || []).includes(p.uid)) awards[p.uid] = 150;
         else if (won) awards[p.uid] = 80;
       });
       awardScores(roomCode, awards);
@@ -139,7 +141,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
           </mesh>
           {(room?.players ?? []).map((p, i) => {
             const a = (i / Math.max(room!.players.length, 1)) * Math.PI * 2;
-            const isOut = live && !live.alive.includes(p.uid);
+            const isOut = live && !(live.alive || []).includes(p.uid);
             const isElimSpot = live?.phase === 'reveal' && live.eliminated === p.uid;
             return (
               <Avatar3D key={p.uid} color={p.avatarColor} name={`${p.name}${isOut ? ' ☠' : ''}`}

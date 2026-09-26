@@ -21,12 +21,15 @@ interface QState extends LiveState {
   startedAt: number;
 }
 function init(uids: string[]): QState {
+  const scores: Record<string, number> = {};
+  if (uids[0]) scores[uids[0]] = 0;
+  if (uids[1]) scores[uids[1]] = 0;
   return {
     phase: 'waiting',
     round: 0,
     goAt: 0,
     reactions: {},
-    scores: { [uids[0]]: 0, [uids[1]]: 0 },
+    scores,
     winner: null,
     roundWinner: null,
     earlyLoser: null,
