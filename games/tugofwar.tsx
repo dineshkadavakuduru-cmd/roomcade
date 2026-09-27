@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import type { GameModule } from './registry';
-import { awardScores, dispatchLive, getSessionUid, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
+import { awardScores, dispatchLive, getSessionUid, patchRoom, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
 import type { Action, LiveState, RoomMeta } from '@/lib/types';
 import { flashBuzzer } from '@/lib/anime';
 
@@ -250,7 +250,15 @@ function GameScene({ roomCode }: { roomCode: string }) {
               {live.winner === uid ? '🏆 YOU WIN!' : '💀 YOU LOSE'}
             </div>
             <p className="text-sm text-white/70">Taps: {live.tapCounts[uid] ?? 0} vs {live.tapCounts[opponent?.uid ?? ''] ?? 0}</p>
-            <button onClick={() => setLive(roomCode, null)} className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold">Back to lobby scoring</button>
+            <button
+              onClick={async () => {
+                await setLive(roomCode, null);
+                await patchRoom(roomCode, { status: 'lobby', currentGameId: null });
+              }}
+              className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold"
+            >
+              🏠 Return to Lounge
+            </button>
           </div>
         )}
       </div>

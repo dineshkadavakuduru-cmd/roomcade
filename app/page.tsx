@@ -86,15 +86,57 @@ export default function Landing() {
 
       <div className="mt-8 grid w-full gap-4 md:grid-cols-2">
         <div className="landing-card arcade-card p-5">
-          <div className="font-display text-lg font-extrabold">Your avatar</div>
+          <div className="flex items-center justify-between">
+            <div className="font-display text-lg font-extrabold">Your avatar</div>
+            <span className="text-xs font-semibold text-white/50">Pick character & color</span>
+          </div>
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={16} placeholder="Display name"
             className="mt-2 w-full rounded-xl bg-black/40 px-3 py-2.5 outline-none placeholder:text-white/30 focus:ring-2 focus:ring-[#FF6B35]" />
-          <div className="mt-3 flex gap-2">
-            {AVATAR_COLORS.map((c) => (
-              <button key={c} onClick={() => setColor(c)} aria-label={c}
-                className="h-9 w-9 rounded-full border-2 transition-transform hover:scale-110"
-                style={{ background: c, borderColor: color === c ? '#fff' : 'transparent', boxShadow: color === c ? `0 0 14px ${c}` : 'none' }} />
-            ))}
+          
+          <div className="mt-3.5 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border-2 text-2xl shadow-lg transition-transform hover:scale-105"
+              style={{
+                background: `linear-gradient(135deg, ${color}, #0d0d24)`,
+                borderColor: color,
+                boxShadow: `0 0 16px ${color}88`,
+              }}
+            >
+              {color === '#FF6B35' ? '🦊' : color === '#38BDF8' ? '🤖' : color === '#8B5CF6' ? '👾' : color === '#FF3D81' ? '🐱' : color === '#FFC53D' ? '🐯' : '🐲'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-display text-sm font-extrabold text-white">
+                {name.trim() || 'Player'}
+              </div>
+              <div className="text-xs font-semibold" style={{ color }}>
+                {color === '#FF6B35' ? 'Cyber Fox' : color === '#38BDF8' ? 'Neon Bot' : color === '#8B5CF6' ? 'Glitch Alien' : color === '#FF3D81' ? 'Astro Cat' : color === '#FFC53D' ? 'Hyper Tiger' : 'Holo Dragon'}
+              </div>
+              <div className="text-[11px] text-white/40">Ready for 3D arcade lounge</div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-1.5">
+            {AVATAR_COLORS.map((c) => {
+              const icon = c === '#FF6B35' ? '🦊' : c === '#38BDF8' ? '🤖' : c === '#8B5CF6' ? '👾' : c === '#FF3D81' ? '🐱' : c === '#FFC53D' ? '🐯' : '🐲';
+              const isSelected = color === c;
+              return (
+                <button
+                  key={c}
+                  onClick={() => setColor(c)}
+                  aria-label={c}
+                  className={`relative flex h-10 w-10 items-center justify-center rounded-xl border-2 text-base transition-all hover:scale-110 ${
+                    isSelected ? 'ring-2 ring-white scale-110' : 'opacity-70 hover:opacity-100'
+                  }`}
+                  style={{
+                    background: c,
+                    borderColor: isSelected ? '#fff' : 'transparent',
+                    boxShadow: isSelected ? `0 0 14px ${c}` : 'none',
+                  }}
+                >
+                  <span className="drop-shadow-sm">{icon}</span>
+                </button>
+              );
+            })}
           </div>
           {err && <p className="mt-2 text-sm font-semibold text-[#FB4D6D]">{err}</p>}
         </div>

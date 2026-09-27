@@ -78,10 +78,14 @@ export default function Play() {
   const game = gameId ? GAMES[gameId] : null;
 
   const quitToLobby = async () => {
-    if (room && room.hostId === getSessionUid()) {
-      await setLive(code, null);
-      await patchRoom(code, { status: 'lobby', currentGameId: null });
-    } else {
+    try {
+      if (room && room.hostId === getSessionUid()) {
+        await setLive(code, null);
+        await patchRoom(code, { status: 'lobby', currentGameId: null });
+      }
+    } catch (e) {
+      console.error('Error exiting to lobby:', e);
+    } finally {
       router.push(`/room/${code}`);
     }
   };
@@ -109,10 +113,35 @@ export default function Play() {
         </GameErrorBoundary>
       </div>
       <div className="grid gap-2 md:grid-cols-[1fr_280px]">
-        <div className="arcade-card flex flex-wrap gap-2 p-3">
-          {(room?.players ?? []).map((p) => (
-            <span key={p.uid} className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-sm font-semibold">{p.name} · {p.score}</span>
-          ))}
+        <div className="arcade-card flex flex-wrap items-center gap-2.5 p-3">
+          {(room?.players ?? []).map((p) => {
+            const isMe = p.uid === getSessionUid();
+            const isThisHost = p.uid === room?.hostId;
+            const icon = p.avatarColor === '#FF6B35' ? '🦊' : p.avatarColor === '#38BDF8' ? '🤖' : p.avatarColor === '#8B5CF6' ? '👾' : p.avatarColor === '#FF3D81' ? '🐱' : p.avatarColor === '#FFC53D' ? '🐯' : '🐲';
+            return (
+              <div
+                key={p.uid}
+                className={`flex items-center gap-2 rounded-xl border px-2.5 py-1.5 transition-all ${
+                  isMe ? 'border-white/30 bg-white/10' : 'border-white/10 bg-white/5'
+                }`}
+              >
+                <div
+                  className="flex h-7 w-7 items-center justify-center rounded-full border text-xs shadow-sm"
+                  style={{
+                    background: p.avatarColor,
+                    borderColor: p.avatarColor,
+                    boxShadow: `0 0 8px ${p.avatarColor}88`,
+                  }}
+                >
+                  {isThisHost ? '👑' : icon}
+                </div>
+                <span className="text-xs font-bold text-white">{p.name} {isMe && <span className="text-[10px] text-white/50">(You)</span>}</span>
+                <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[11px] font-extrabold text-[#FFC53D]">
+                  {p.score}
+                </span>
+              </div>
+            );
+          })}
         </div>
         <Scoreboard players={room?.players ?? []} compact />
       </div>

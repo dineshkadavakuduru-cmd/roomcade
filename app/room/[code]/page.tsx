@@ -218,13 +218,48 @@ export default function Lobby() {
         </div>
       </div>
 
-      <div className="arcade-card flex flex-wrap gap-2 p-3">
-        <span className="text-sm font-bold text-white/60">In room ({room?.players.length ?? 0}/8):</span>
-        {(room?.players ?? []).map((p) => (
-          <span key={p.uid} className="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-sm font-semibold">
-            <span className="h-3 w-3 rounded-full" style={{ background: p.avatarColor }} />{p.name} · {p.score}
-          </span>
-        ))}
+      <div className="arcade-card p-4">
+        <div className="flex items-center justify-between pb-3">
+          <div className="font-display text-sm font-bold uppercase tracking-widest text-white/60">
+            👥 Lounge Players ({room?.players.length ?? 0}/8)
+          </div>
+          <span className="text-xs text-white/40">Ready to play</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 md:grid-cols-8">
+          {(room?.players ?? []).map((p) => {
+            const isMe = p.uid === uid;
+            const isThisHost = p.uid === room?.hostId;
+            const icon = p.avatarColor === '#FF6B35' ? '🦊' : p.avatarColor === '#38BDF8' ? '🤖' : p.avatarColor === '#8B5CF6' ? '👾' : p.avatarColor === '#FF3D81' ? '🐱' : p.avatarColor === '#FFC53D' ? '🐯' : '🐲';
+            return (
+              <div
+                key={p.uid}
+                className={`flex flex-col items-center gap-1.5 rounded-2xl border p-2.5 text-center transition-all ${
+                  isMe ? 'border-white/30 bg-white/10 shadow-[0_0_12px_rgba(255,255,255,0.15)]' : 'border-white/10 bg-white/5'
+                }`}
+              >
+                <div className="relative">
+                  <div
+                    className="flex h-11 w-11 items-center justify-center rounded-full border-2 text-xl shadow-md transition-transform hover:scale-110"
+                    style={{
+                      background: `linear-gradient(135deg, ${p.avatarColor}, #0d0d24)`,
+                      borderColor: p.avatarColor,
+                      boxShadow: `0 0 14px ${p.avatarColor}88`,
+                    }}
+                  >
+                    {isThisHost ? '👑' : icon}
+                  </div>
+                  <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#0d0d24] bg-emerald-400" />
+                </div>
+                <div className="w-full truncate text-xs font-extrabold text-white">
+                  {p.name} {isMe && <span className="text-[10px] text-white/50">(You)</span>}
+                </div>
+                <div className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-[#FFC53D]">
+                  🏆 {p.score} pts
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {(room?.status === 'recap' || recap) && (

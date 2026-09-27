@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import type { GameModule } from './registry';
-import { dispatchLive, getSessionUid, setLive, subscribeLive, subscribeRoom, awardScores } from '@/lib/room-store';
+import { dispatchLive, getSessionUid, patchRoom, setLive, subscribeLive, subscribeRoom, awardScores } from '@/lib/room-store';
 import type { Action, LiveState, RoomMeta } from '@/lib/types';
 import { flashBuzzer } from '@/lib/anime';
 
@@ -223,7 +223,17 @@ function GameScene({ roomCode }: { roomCode: string }) {
           <div className="arcade-card p-4 text-center">
             <div className="font-display text-lg font-extrabold">Word was “{live.word}” 🎉</div>
             <p className="text-sm text-white/70">{live.winnerUids.length} guesser(s) scored + sculptor banked {40 * live.winnerUids.length}.</p>
-            {isHost && <button onClick={() => setLive(roomCode, null)} className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold">Back to lobby scoring</button>}
+            {isHost && (
+              <button
+                onClick={async () => {
+                  await setLive(roomCode, null);
+                  await patchRoom(roomCode, { status: 'lobby', currentGameId: null });
+                }}
+                className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold"
+              >
+                🏠 Return to Lounge
+              </button>
+            )}
           </div>
         )}
       </div>

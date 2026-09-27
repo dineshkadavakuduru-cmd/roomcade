@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import type { GameModule } from './registry';
 import { Avatar3D } from '@/components/Avatar3D';
-import { awardScores, dispatchLive, getSessionUid, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
+import { awardScores, dispatchLive, getSessionUid, patchRoom, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
 import type { Action, LiveState, RoomMeta } from '@/lib/types';
 
 type Role = 'werewolf' | 'seer' | 'villager';
@@ -228,7 +228,17 @@ function GameScene({ roomCode }: { roomCode: string }) {
             <div className="mt-1 text-sm text-white/70">
               {Object.entries(live.roles || {}).map(([u, r]) => <div key={u}>{nameOf(u)} — {r}{(live.alive || []).includes(u) ? ' (survived)' : ''}</div>)}
             </div>
-            {isHost && <button onClick={() => setLive(roomCode, null)} className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold">Back to lobby scoring</button>}
+            {isHost && (
+              <button
+                onClick={async () => {
+                  await setLive(roomCode, null);
+                  await patchRoom(roomCode, { status: 'lobby', currentGameId: null });
+                }}
+                className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold"
+              >
+                🏠 Return to Lounge
+              </button>
+            )}
           </div>
         )}
       </div>
