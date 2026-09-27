@@ -38,8 +38,8 @@ function checkWin(s: WState): string | null {
   const roles = s.roles || {};
   const aliveW = alive.filter((u) => roles[u] === 'werewolf');
   const aliveV = alive.filter((u) => roles[u] !== 'werewolf');
-  if (aliveW.length === 0) return 'villagers';
-  if (aliveW.length >= aliveV.length) return 'werewolves';
+  if (aliveW.length === 0 && alive.length > 0) return 'villagers';
+  if (aliveW.length >= aliveV.length && alive.length > 1) return 'werewolves';
   return null;
 }
 

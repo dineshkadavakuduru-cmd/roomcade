@@ -51,9 +51,14 @@ function applyAction(state: LiveState, action: Action): LiveState {
         ropePos = Math.max(-MAX_POSITION, Math.min(MAX_POSITION, ropePos));
       }
       let winner: string | null = null;
-      if (ropePos <= -WIN_THRESHOLD) winner = Object.keys(tapCounts)[0];
-      if (ropePos >= WIN_THRESHOLD) winner = Object.keys(tapCounts)[1];
-      return { ...s, ropePos, tapCounts, lastTap: { ...s.lastTap, [action.uid]: now }, winner };
+      const keys = Object.keys(tapCounts);
+      if (keys.length === 1) {
+        if (p1 >= 15) winner = keys[0] ?? null;
+      } else {
+        if (ropePos <= -WIN_THRESHOLD) winner = keys[0] ?? null;
+        if (ropePos >= WIN_THRESHOLD) winner = keys[1] ?? null;
+      }
+      return { ...s, ropePos, tapCounts, lastTap: { ...s.lastTap, [action.uid]: now }, winner: winner ?? null };
     }
     case 'end':
       return { ...s, phase: 'done' };

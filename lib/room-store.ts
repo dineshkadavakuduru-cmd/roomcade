@@ -39,7 +39,7 @@ export function getSessionUid(): string {
   return uid;
 }
 
-export async function createRoom(name: string, avatarColor: string): Promise<{ code: string; uid: string }> {
+export async function createRoom(name: string, avatarColor: string, initialGameId: string = 'sculptionary'): Promise<{ code: string; uid: string }> {
   const uid = getSessionUid();
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateCode(5);
@@ -48,7 +48,7 @@ export async function createRoom(name: string, avatarColor: string): Promise<{ c
       hostId: uid,
       status: 'lobby',
       currentGameId: null,
-      selectedGameId: 'sculptionary',
+      selectedGameId: initialGameId || 'sculptionary',
       players: [{ uid, name: name || 'Host', avatarColor, score: 0 }],
       round: 1,
       updatedAt: Date.now(),

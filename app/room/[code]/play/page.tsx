@@ -1,7 +1,7 @@
 'use client';
 import React, { Component, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getSessionUid, patchRoom, subscribeRoom } from '@/lib/room-store';
+import { getSessionUid, patchRoom, setLive, subscribeRoom } from '@/lib/room-store';
 import { GAMES, LazyGameScene } from '@/games';
 import { Scoreboard } from '@/components/Scoreboard';
 import { PortalTransition } from '@/components/PortalTransition';
@@ -77,9 +77,13 @@ export default function Play() {
   const gameId = room?.currentGameId;
   const game = gameId ? GAMES[gameId] : null;
 
-  const quitToLobby = () => {
-    if (room && room.hostId === getSessionUid()) patchRoom(code, { status: 'lobby', currentGameId: null });
-    else router.push(`/room/${code}`);
+  const quitToLobby = async () => {
+    if (room && room.hostId === getSessionUid()) {
+      await setLive(code, null);
+      await patchRoom(code, { status: 'lobby', currentGameId: null });
+    } else {
+      router.push(`/room/${code}`);
+    }
   };
 
   return (

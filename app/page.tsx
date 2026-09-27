@@ -13,6 +13,7 @@ export default function Landing() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [selectedGame, setSelectedGame] = useState('movietrivia');
 
   useEffect(() => {
     setName(sessionStorage.getItem('roomcade:name') ?? '');
@@ -25,7 +26,7 @@ export default function Landing() {
     if (!name.trim()) { setErr('Pick a display name first.'); return; }
     setBusy(true); setErr('');
     try {
-      const { code: c } = await createRoom(name.trim(), color);
+      const { code: c } = await createRoom(name.trim(), color, selectedGame);
       router.push(`/room/${c}`);
     } catch (e: any) {
       setErr(e.message ?? 'Could not create room.');
@@ -47,10 +48,15 @@ export default function Landing() {
   };
 
   const games = useMemo(() => [
-    { n: 'Sculptionary', d: 'Sculpt words in 3D', c: '#FF6B35', tag: '3D!', tilt: '-3deg' },
-    { n: 'Werewolf', d: 'Night-fall deduction', c: '#8B5CF6', tag: 'sus', tilt: '2deg' },
-    { n: 'Truth or Dare', d: 'Confess or commit', c: '#FF3D81', tag: '🔥', tilt: '-2deg' },
-    { n: 'Movie Trivia', d: 'Lights, camera, buzz!', c: '#FFC53D', tag: '🎬', tilt: '3deg' },
+    { id: 'movietrivia', n: 'Movie Trivia', d: 'Lights, camera, buzz!', c: '#FFC53D', tag: '🎬', tilt: '3deg' },
+    { id: 'quickdraw', n: 'Quick Draw', d: 'Reaction showdown', c: '#38BDF8', tag: '⚡', tilt: '-2deg' },
+    { id: 'trivia', n: 'Trivia Podiums', d: 'Buzz & beat friends', c: '#34D399', tag: '🎙️', tilt: '2deg' },
+    { id: 'tugofwar', n: 'Tug of War', d: 'Furious tap battle', c: '#FB7185', tag: '💪', tilt: '-3deg' },
+    { id: 'fogduel', n: 'Fog Duel', d: 'Grid warfare in fog', c: '#60A5FA', tag: '🚢', tilt: '2deg' },
+    { id: 'sculptionary', n: 'Sculptionary', d: 'Sculpt words in 3D', c: '#FF6B35', tag: '3D!', tilt: '-3deg' },
+    { id: 'werewolf', n: 'Werewolf', d: 'Night-fall deduction', c: '#8B5CF6', tag: '🐺', tilt: '2deg' },
+    { id: 'truthordare', n: 'Truth or Dare', d: 'Confess or commit', c: '#FF3D81', tag: '🔥', tilt: '-2deg' },
+    { id: 'tag', n: 'Tag Arena', d: 'Chase & escape in 3D', c: '#F472B6', tag: '🏃', tilt: '3deg' },
   ], []);
 
   return (
@@ -95,9 +101,10 @@ export default function Landing() {
         <div className="flex flex-col gap-4">
           <div className="landing-card arcade-card p-5">
             <div className="font-display text-lg font-extrabold">Start a game night</div>
+            <div className="text-xs text-white/60">Cartridge: <span className="font-bold text-[#FFC53D]">{games.find((g) => g.id === selectedGame)?.n}</span></div>
             <div className="relative">
               <button onClick={doCreate} disabled={busy || !name.trim()} className="btn-neon mt-2 w-full px-4 py-3 font-display text-lg font-extrabold disabled:opacity-50 disabled:cursor-not-allowed">
-                {busy ? '…' : '＋ Create room'}
+                {busy ? '…' : `＋ Create room (${games.find((g) => g.id === selectedGame)?.n})`}
               </button>
               {!name.trim() && (
                 <p className="mt-1.5 text-center text-xs font-medium text-white/50">
@@ -119,17 +126,31 @@ export default function Landing() {
         </div>
       </div>
 
-      <div className="mt-8 grid w-full grid-cols-2 gap-3 md:grid-cols-4" style={{ overflow: 'visible' }}>
-        {games.map((g) => (
-          <div key={g.n} className="landing-card arcade-card relative p-4 pt-6" style={{ boxShadow: `inset 0 -3px 0 ${g.c}55, inset 0 1px 0 rgba(255,255,255,.16)` }}>
-            <span className="sticker absolute -top-3 left-3" style={{ background: g.c, color: '#0d0d24', borderColor: '#FFF6E9', transform: `rotate(${g.tilt})` }}>
-              {g.tag}
-            </span>
-            <div className="h-2 w-10 rounded-full" style={{ background: g.c }} />
-            <div className="font-display mt-2 font-extrabold">{g.n}</div>
-            <div className="text-sm text-white/60">{g.d}</div>
-          </div>
-        ))}
+      <div className="mt-8 w-full text-center">
+        <div className="font-display text-sm font-bold uppercase tracking-widest text-white/50">Choose starting cartridge (click any to select)</div>
+      </div>
+      <div className="mt-3 grid w-full grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5" style={{ overflow: 'visible' }}>
+        {games.map((g) => {
+          const isSel = selectedGame === g.id;
+          return (
+            <div
+              key={g.id}
+              onClick={() => setSelectedGame(g.id)}
+              className={`landing-card arcade-card relative cursor-pointer p-4 pt-6 transition-all duration-200 hover:-translate-y-1 ${isSel ? 'ring-2 ring-white shadow-lg' : 'opacity-80 hover:opacity-100'}`}
+              style={{
+                boxShadow: isSel ? `0 0 20px ${g.c}88, inset 0 -3px 0 ${g.c}, inset 0 1px 0 rgba(255,255,255,.3)` : `inset 0 -3px 0 ${g.c}55, inset 0 1px 0 rgba(255,255,255,.16)`,
+                borderColor: isSel ? g.c : undefined,
+              }}
+            >
+              <span className="sticker absolute -top-3 left-3" style={{ background: g.c, color: '#0d0d24', borderColor: '#FFF6E9', transform: `rotate(${g.tilt})` }}>
+                {isSel ? '✓ ACTIVE' : g.tag}
+              </span>
+              <div className="h-2 w-10 rounded-full" style={{ background: g.c }} />
+              <div className="font-display mt-2 font-extrabold text-sm sm:text-base" style={{ color: isSel ? g.c : '#fff' }}>{g.n}</div>
+              <div className="text-xs text-white/60">{g.d}</div>
+            </div>
+          );
+        })}
       </div>
       <p className="mt-6 text-center text-xs text-white/40">Two tabs on this machine = two players. Open a second tab, join with the same code, play the full night.</p>
     </main>

@@ -46,15 +46,22 @@ function applyAction(state: LiveState, action: Action): LiveState {
     case 'react': {
       if (s.phase !== 'armed') {
         // early shot = lose round
-        const other = Object.keys(s.scores).find((u) => u !== action.uid);
+        const other = Object.keys(s.scores).find((u) => u !== action.uid) || null;
         return { ...s, phase: 'round-end', earlyLoser: action.uid, roundWinner: other };
       }
       const reactions = { ...s.reactions, [action.uid]: Date.now() };
-      if (Object.keys(reactions).length === 2) {
-        const [u1, u2] = Object.keys(reactions);
-        const r1 = reactions[u1]! - s.goAt;
-        const r2 = reactions[u2]! - s.goAt;
-        const roundWinner = r1 <= r2 ? u1 : u2;
+      const expected = Math.max(1, Math.min(2, Object.keys(s.scores).length));
+      if (Object.keys(reactions).length >= expected) {
+        const uids = Object.keys(reactions);
+        let roundWinner: string;
+        if (uids.length === 1) {
+          roundWinner = uids[0]!;
+        } else {
+          const [u1, u2] = uids;
+          const r1 = reactions[u1!]! - s.goAt;
+          const r2 = reactions[u2!]! - s.goAt;
+          roundWinner = r1 <= r2 ? u1! : u2!;
+        }
         const scores = { ...s.scores, [roundWinner]: (s.scores[roundWinner] ?? 0) + 1 };
         const winner = scores[roundWinner]! >= ROUNDS_TO_WIN ? roundWinner : null;
         return { ...s, phase: 'round-end', reactions, roundWinner, scores, winner };

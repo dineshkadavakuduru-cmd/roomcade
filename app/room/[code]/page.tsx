@@ -3,7 +3,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Canvas } from '@react-three/fiber';
 import { AVATAR_COLORS, type RoomMeta } from '@/lib/types';
-import { getSessionUid, joinRoom, patchRoom, subscribeRoom } from '@/lib/room-store';
+import { getSessionUid, joinRoom, patchRoom, setLive, subscribeRoom } from '@/lib/room-store';
 import { GAME_LIST } from '@/games';
 import { LobbyScene } from '@/components/LobbyScene';
 import { Scoreboard } from '@/components/Scoreboard';
@@ -58,13 +58,14 @@ export default function Lobby() {
   useEffect(() => { popIn('.lobby-pop'); }, [room?.players.length]);
 
   // Synchronize cartridge selection across all players via room.selectedGameId
-  const selectedIndex = room?.selectedGameId
-    ? GAME_LIST.findIndex((g) => g.id === room.selectedGameId)
-    : room?.currentGameId
-    ? GAME_LIST.findIndex((g) => g.id === room.currentGameId)
-    : -1;
-  const activeSel = selectedIndex >= 0 ? selectedIndex : sel;
-  const game = GAME_LIST[activeSel % GAME_LIST.length]!;
+  useEffect(() => {
+    if (room?.selectedGameId) {
+      const idx = GAME_LIST.findIndex((g) => g.id === room.selectedGameId);
+      if (idx >= 0) setSel(idx);
+    }
+  }, [room?.selectedGameId]);
+
+  const game = GAME_LIST[sel % GAME_LIST.length]!;
   const eligible = room ? room.players.length >= game.minPlayers : false;
 
   const selectGame = (index: number) => {
@@ -75,8 +76,19 @@ export default function Lobby() {
     }
   };
 
+  const selectGameById = (id: string) => {
+    const idx = GAME_LIST.findIndex((g) => g.id === id);
+    if (idx >= 0) {
+      setSel(idx);
+      if (isHost) {
+        patchRoom(code, { selectedGameId: id });
+      }
+    }
+  };
+
   const startGame = async () => {
-    if (!isHost || !eligible) return;
+    if (!isHost) return;
+    await setLive(code, null);
     await patchRoom(code, { status: 'in-game', currentGameId: game.id, selectedGameId: game.id });
     setWarp(true);
   };
@@ -85,7 +97,10 @@ export default function Lobby() {
     router.push(`/room/${code}/play`);
   };
 
-  const backToLobby = () => patchRoom(code, { status: 'lobby', currentGameId: null });
+  const backToLobby = async () => {
+    await setLive(code, null);
+    await patchRoom(code, { status: 'lobby', currentGameId: null });
+  };
   const endNight = () => patchRoom(code, { status: 'recap' });
 
   if (missing) {
@@ -117,18 +132,17 @@ export default function Lobby() {
             <LobbyScene players={room?.players ?? []} cartridges={GAME_LIST.map((g) => ({ id: g.id, label: g.displayName, color: g.accent }))} />
           </Suspense>
           <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2">
-            <button onClick={() => selectGame(activeSel - 1)} className="arcade-card px-3 py-2 font-bold">‹</button>
+            <button onClick={() => selectGame(sel - 1)} className="arcade-card px-3 py-2 font-bold hover:bg-white/20">‹</button>
             <div
-              className={`arcade-card lobby-pop flex-1 cursor-pointer px-3 py-2 text-center ${eligible ? 'ring-2 ring-white/25' : 'opacity-40'}`}
-              onClick={() => eligible && selectGame(activeSel)}
+              className="arcade-card lobby-pop flex-1 cursor-pointer px-3 py-2 text-center ring-2 ring-white/25"
+              onClick={() => selectGame(sel + 1)}
               role="button"
-              aria-disabled={!eligible}
             >
               <span className="font-display font-extrabold" style={{ color: game.accent }}>{game.displayName}</span>
               <span className="text-sm text-white/60"> · {game.tagline} · {game.minPlayers}–{game.maxPlayers} players</span>
-              {!eligible && <span className="ml-1 text-xs font-bold text-[#FB4D6D]">(needs {game.minPlayers}+)</span>}
+              {!eligible && <span className="ml-1 text-xs font-bold text-[#FFC53D]">(solo test available)</span>}
             </div>
-            <button onClick={() => selectGame(activeSel + 1)} className="arcade-card px-3 py-2 font-bold">›</button>
+            <button onClick={() => selectGame(sel + 1)} className="arcade-card px-3 py-2 font-bold hover:bg-white/20">›</button>
           </div>
         </div>
 
@@ -137,28 +151,70 @@ export default function Lobby() {
             <PreviewCanvas id={game.id} />
           </div>
           {isHost ? (
-            <button
-              onClick={startGame}
-              disabled={!eligible}
-              className="btn-neon w-full px-4 py-3 font-display text-lg font-extrabold disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50"
-            >
-              {eligible ? `▶ Start ${game.displayName}` : `Need ${game.minPlayers}+ players (${room?.players.length ?? 0} here)`}
-            </button>
+            <div className="flex flex-col gap-1.5">
+              <button
+                onClick={startGame}
+                className={`btn-neon w-full px-4 py-3 font-display text-lg font-extrabold ${!eligible ? 'bg-gradient-to-r from-[#FF6B35] to-[#FF3D81] ring-1 ring-white/30' : ''}`}
+              >
+                {eligible ? `▶ Start ${game.displayName}` : `⚡ Play ${game.displayName} (Solo / Test)`}
+              </button>
+              {!eligible && (
+                <span className="text-center text-xs font-medium text-white/50">
+                  Full party needs {game.minPlayers}+ players ({room?.players.length ?? 0} here) · Test mode unlocked
+                </span>
+              )}
+            </div>
           ) : (
             <div className="arcade-card p-3 text-center text-sm text-white/70">
               {eligible
                 ? `Waiting for host to start… Cartridge: ${game.displayName}`
-                : `Waiting — ${game.displayName} needs ${game.minPlayers} players (${room?.players.length ?? 0} here)`}
+                : `Waiting for host… Cartridge: ${game.displayName} (${game.minPlayers} players for party)`}
             </div>
           )}
           <Scoreboard players={room?.players ?? []} compact />
           {isHost && (
             <div className="flex gap-2">
-              <button onClick={backToLobby} className="flex-1 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold">Reset to lobby</button>
-              <button onClick={endNight} className="flex-1 rounded-xl bg-[#FFC53D]/20 px-3 py-2 text-xs font-bold text-[#FFC53D]">🏆 End night & recap</button>
+              <button onClick={backToLobby} className="flex-1 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold hover:bg-white/20">Reset to lobby</button>
+              <button onClick={endNight} className="flex-1 rounded-xl bg-[#FFC53D]/20 px-3 py-2 text-xs font-bold text-[#FFC53D] hover:bg-[#FFC53D]/30">🏆 End night & recap</button>
             </div>
           )}
-          <button onClick={() => setRecap(true)} className="rounded-xl bg-white/5 px-3 py-2 text-xs font-bold text-white/60">Preview recap podium</button>
+          <button onClick={() => setRecap(true)} className="rounded-xl bg-white/5 px-3 py-2 text-xs font-bold text-white/60 hover:bg-white/15">Preview recap podium</button>
+        </div>
+      </div>
+
+      <div className="arcade-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-1 pb-2">
+          <div>
+            <span className="text-xs font-bold uppercase tracking-[.2em] text-white/50">Arcade Cartridge Rack</span>
+            <h2 className="font-display text-lg font-extrabold text-white">Choose Any Game Cartridge ({GAME_LIST.length} Games)</h2>
+          </div>
+          <span className="text-xs text-white/60">Click any cartridge to switch instantly</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-5">
+          {GAME_LIST.map((g, i) => {
+            const isCurrent = (sel % GAME_LIST.length) === i;
+            return (
+              <button
+                key={g.id}
+                onClick={() => selectGameById(g.id)}
+                className={`arcade-card relative flex flex-col items-start p-3 text-left transition-all duration-200 hover:-translate-y-0.5 ${
+                  isCurrent ? 'ring-2 ring-white shadow-lg' : 'opacity-70 hover:opacity-100'
+                }`}
+                style={{
+                  boxShadow: isCurrent ? `0 0 16px ${g.accent}88, inset 0 -2px 0 ${g.accent}` : `inset 0 -2px 0 ${g.accent}55`,
+                  borderColor: isCurrent ? g.accent : undefined,
+                }}
+              >
+                <div className="flex w-full items-center justify-between">
+                  <span className="h-2 w-6 rounded-full" style={{ background: g.accent }} />
+                  {isCurrent && <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-extrabold text-white">ACTIVE</span>}
+                </div>
+                <div className="font-display mt-2 text-sm font-extrabold text-white">{g.displayName}</div>
+                <div className="line-clamp-1 text-xs text-white/60">{g.tagline}</div>
+                <div className="mt-1 text-[11px] font-semibold text-white/50">{g.minPlayers}–{g.maxPlayers} players</div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
