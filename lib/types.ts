@@ -12,6 +12,7 @@ export interface RoomMeta {
   hostId: string;
   status: RoomStatus;
   currentGameId: string | null;
+  selectedGameId?: string | null;
   players: Player[];
   round: number;
   updatedAt: number;

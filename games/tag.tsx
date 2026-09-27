@@ -31,14 +31,14 @@ function applyAction(state: LiveState, action: Action): LiveState {
     case 'start':
       return { ...init(action.payload.playerUids), phase: 'playing', startedAt: Date.now(), itUid: action.payload.itUid };
     case 'move': {
-      const positions = { ...s.positions, [action.uid]: action.payload.pos };
+      const positions = { ...(s.positions || {}), [action.uid]: action.payload.pos };
       // tag transfer on contact
       let itUid = s.itUid;
       if (action.uid === s.itUid) {
         for (const [u, p] of Object.entries(positions)) {
           if (u === s.itUid) continue;
-          const it = positions[s.itUid]!;
-          if (Math.hypot(p.x - it.x, p.z - it.z) < TAG_DIST) { itUid = u; break; }
+          const it = positions[s.itUid];
+          if (it && Math.hypot(p.x - it.x, p.z - it.z) < TAG_DIST) { itUid = u; break; }
         }
       } else {
         const me = action.payload.pos as { x: number; z: number };

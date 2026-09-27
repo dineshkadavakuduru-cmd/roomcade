@@ -94,7 +94,13 @@ export default function Play() {
       <div className="min-h-[70vh] flex-1">
         <GameErrorBoundary key={gameId ?? 'empty'} onBackToLobby={quitToLobby}>
           <Suspense fallback={<div className="arcade-card flex h-[60vh] items-center justify-center font-display text-xl font-bold text-white/60">Warping in…</div>}>
-            {gameId ? <LazyGameScene id={gameId} roomCode={code} /> : <div className="arcade-card p-6 text-center text-white/60">No game selected — head back to the lobby.</div>}
+            {!room ? (
+              <div className="arcade-card flex h-[60vh] items-center justify-center font-display text-xl font-bold text-white/60">Warping in…</div>
+            ) : gameId ? (
+              <LazyGameScene id={gameId} roomCode={code} />
+            ) : (
+              <div className="arcade-card p-6 text-center text-white/60">No game selected — head back to the lobby.</div>
+            )}
           </Suspense>
         </GameErrorBoundary>
       </div>

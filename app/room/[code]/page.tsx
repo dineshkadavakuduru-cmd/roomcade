@@ -57,16 +57,32 @@ export default function Lobby() {
 
   useEffect(() => { popIn('.lobby-pop'); }, [room?.players.length]);
 
-  const game = GAME_LIST[sel % GAME_LIST.length]!;
+  // Synchronize cartridge selection across all players via room.selectedGameId
+  const selectedIndex = room?.selectedGameId
+    ? GAME_LIST.findIndex((g) => g.id === room.selectedGameId)
+    : room?.currentGameId
+    ? GAME_LIST.findIndex((g) => g.id === room.currentGameId)
+    : -1;
+  const activeSel = selectedIndex >= 0 ? selectedIndex : sel;
+  const game = GAME_LIST[activeSel % GAME_LIST.length]!;
   const eligible = room ? room.players.length >= game.minPlayers : false;
+
+  const selectGame = (index: number) => {
+    const next = (index + GAME_LIST.length) % GAME_LIST.length;
+    setSel(next);
+    if (isHost) {
+      patchRoom(code, { selectedGameId: GAME_LIST[next]!.id });
+    }
+  };
 
   const startGame = async () => {
     if (!isHost || !eligible) return;
+    await patchRoom(code, { status: 'in-game', currentGameId: game.id, selectedGameId: game.id });
     setWarp(true);
   };
 
   const goPlay = () => {
-    patchRoom(code, { status: 'in-game', currentGameId: game.id }).then(() => router.push(`/room/${code}/play`));
+    router.push(`/room/${code}/play`);
   };
 
   const backToLobby = () => patchRoom(code, { status: 'lobby', currentGameId: null });
@@ -101,10 +117,10 @@ export default function Lobby() {
             <LobbyScene players={room?.players ?? []} cartridges={GAME_LIST.map((g) => ({ id: g.id, label: g.displayName, color: g.accent }))} />
           </Suspense>
           <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2">
-            <button onClick={() => setSel((s) => (s + GAME_LIST.length - 1) % GAME_LIST.length)} className="arcade-card px-3 py-2 font-bold">‹</button>
+            <button onClick={() => selectGame(activeSel - 1)} className="arcade-card px-3 py-2 font-bold">‹</button>
             <div
               className={`arcade-card lobby-pop flex-1 cursor-pointer px-3 py-2 text-center ${eligible ? 'ring-2 ring-white/25' : 'opacity-40'}`}
-              onClick={() => eligible && setSel(sel)}
+              onClick={() => eligible && selectGame(activeSel)}
               role="button"
               aria-disabled={!eligible}
             >
@@ -112,7 +128,7 @@ export default function Lobby() {
               <span className="text-sm text-white/60"> · {game.tagline} · {game.minPlayers}–{game.maxPlayers} players</span>
               {!eligible && <span className="ml-1 text-xs font-bold text-[#FB4D6D]">(needs {game.minPlayers}+)</span>}
             </div>
-            <button onClick={() => setSel((s) => (s + 1) % GAME_LIST.length)} className="arcade-card px-3 py-2 font-bold">›</button>
+            <button onClick={() => selectGame(activeSel + 1)} className="arcade-card px-3 py-2 font-bold">›</button>
           </div>
         </div>
 

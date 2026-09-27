@@ -177,7 +177,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
                 <div className="mt-1 flex gap-1">
                   <select value={killFor} onChange={(e) => setKillFor(e.target.value)} className="min-w-0 flex-1 rounded-lg bg-black/40 px-2 py-1.5 text-sm">
                     <option value="">Kill…</option>
-                    {live.alive.filter((u) => u !== uid).map((u) => <option key={u} value={u}>{nameOf(u)}</option>)}
+                    {(live.alive || []).filter((u) => u !== uid).map((u) => <option key={u} value={u}>{nameOf(u)}</option>)}
                   </select>
                   <button onClick={() => killFor && act('wolf-kill', { target: killFor })} className="rounded-lg bg-[#FF3D81] px-3 py-1.5 text-sm font-bold">🐺</button>
                 </div>
@@ -187,17 +187,17 @@ function GameScene({ roomCode }: { roomCode: string }) {
               <div className="mt-2 flex gap-1">
                 <select value={checkFor} onChange={(e) => setCheckFor(e.target.value)} className="min-w-0 flex-1 rounded-lg bg-black/40 px-2 py-1.5 text-sm">
                   <option value="">Peek at…</option>
-                  {live.alive.filter((u) => u !== uid).map((u) => <option key={u} value={u}>{nameOf(u)}</option>)}
+                  {(live.alive || []).filter((u) => u !== uid).map((u) => <option key={u} value={u}>{nameOf(u)}</option>)}
                 </select>
                 <button onClick={() => checkFor && act('seer-check', { target: checkFor })} className="rounded-lg bg-[#8B5CF6] px-3 py-1.5 text-sm font-bold">🔮</button>
               </div>
             )}
-            {checkFor && live.seerChecks[uid] && <p className="mt-1 text-sm text-[#8B5CF6]">🔮 {nameOf(checkFor)} is a <b>{live.seerChecks[uid]}</b></p>}
+            {checkFor && live.seerChecks?.[uid] && <p className="mt-1 text-sm text-[#8B5CF6]">🔮 {nameOf(checkFor)} is a <b>{live.seerChecks[uid]}</b></p>}
             {live.phase === 'day' && alive && (
               <div className="mt-2 flex gap-1">
                 <select value={voteFor} onChange={(e) => setVoteFor(e.target.value)} className="min-w-0 flex-1 rounded-lg bg-black/40 px-2 py-1.5 text-sm">
                   <option value="">Vote to eliminate…</option>
-                  {live.alive.filter((u) => u !== uid).map((u) => <option key={u} value={u}>{nameOf(u)} ({Object.values(live.votes).filter((v) => v === u).length})</option>)}
+                  {(live.alive || []).filter((u) => u !== uid).map((u) => <option key={u} value={u}>{nameOf(u)} ({Object.values(live.votes || {}).filter((v) => v === u).length})</option>)}
                 </select>
                 <button onClick={() => voteFor && act('vote', { target: voteFor })} className="rounded-lg bg-[#FFC53D] px-3 py-1.5 text-sm font-bold text-black">Vote</button>
               </div>
@@ -226,7 +226,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
           <div className="arcade-card p-4 text-center">
             <div className="font-display text-xl font-extrabold">🏁 {live.winner} win the village!</div>
             <div className="mt-1 text-sm text-white/70">
-              {Object.entries(live.roles).map(([u, r]) => <div key={u}>{nameOf(u)} — {r}{live.alive.includes(u) ? ' (survived)' : ''}</div>)}
+              {Object.entries(live.roles || {}).map(([u, r]) => <div key={u}>{nameOf(u)} — {r}{(live.alive || []).includes(u) ? ' (survived)' : ''}</div>)}
             </div>
             {isHost && <button onClick={() => setLive(roomCode, null)} className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold">Back to lobby scoring</button>}
           </div>
