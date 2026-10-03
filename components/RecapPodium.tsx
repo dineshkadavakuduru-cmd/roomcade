@@ -8,7 +8,12 @@ import type { Player } from '@/lib/types';
 function Confetti() {
   const ref = useRef<any>(null);
   useFrame(({ clock }) => {
-    if (ref.current) ref.current.rotation.y = clock.getElapsedTime() * 0.15;
+    const t = clock.getElapsedTime();
+    if (ref.current) {
+      ref.current.rotation.y = t * 0.15;
+      // gentle vertical drift so the celebration keeps moving
+      ref.current.position.y = Math.sin(t * 1.2) * 0.25;
+    }
   });
   const pieces = Array.from({ length: 60 }, (_, i) => {
     const a = (i / 60) * Math.PI * 2;
@@ -42,6 +47,16 @@ export function RecapPodium({ players }: { players: Player[] }) {
         <meshStandardMaterial color="#1b1b40" roughness={0.85} />
       </mesh>
       <Confetti />
+      {/* Winner sparkle burst */}
+      {Array.from({ length: 14 }).map((_, i) => {
+        const a = (i / 14) * Math.PI * 2;
+        return (
+          <mesh key={`sp-${i}`} position={[Math.cos(a) * 2.2, 3.6 + Math.sin(a * 3) * 0.4, Math.sin(a) * 2.2]}>
+            <sphereGeometry args={[0.07, 8, 8]} />
+            <meshBasicMaterial color={i % 2 ? '#FFC53D' : '#FFF6E9'} />
+          </mesh>
+        );
+      })}
       {sorted.map((p, i) => (
         <group key={p.uid} position={[xs[i]!, 0, 0]}>
           <mesh position={[0, heights[i]! / 2, 0]}>

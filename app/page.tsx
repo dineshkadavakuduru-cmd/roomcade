@@ -6,6 +6,17 @@ import { createRoom, getSessionUid, joinRoom } from '@/lib/room-store';
 import { popIn, staggerReveal } from '@/lib/anime';
 import { useEffect } from 'react';
 
+const AVATAR_NAMES: Record<string, string> = {
+  '#FF6B35': 'Cyber Fox',
+  '#FF3D81': 'Astro Cat',
+  '#8B5CF6': 'Glitch Alien',
+  '#34D399': 'Pixel Frog',
+  '#38BDF8': 'Neon Bot',
+  '#FFC53D': 'Hyper Tiger',
+  '#F8FAFC': 'Frost Ghost',
+  '#FB4D6D': 'Blaze Wolf',
+};
+
 export default function Landing() {
   const router = useRouter();
   const [name, setName] = useState('');
@@ -60,12 +71,29 @@ export default function Landing() {
   ], []);
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center px-4 py-10">
+    <main className="page-fade relative mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center px-4 py-10">
+      {/* Animated background: slow gradient mesh + floating particles */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden>
+        <div className="mesh-blob absolute -left-24 top-10 h-72 w-72 rounded-full bg-[#FF6B35]/20 blur-3xl" />
+        <div className="mesh-blob absolute right-0 top-1/3 h-80 w-80 rounded-full bg-[#8B5CF6]/20 blur-3xl" style={{ animationDelay: '-6s' }} />
+        <div className="mesh-blob absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-[#FF3D81]/20 blur-3xl" style={{ animationDelay: '-12s' }} />
+        {Array.from({ length: 18 }).map((_, i) => (
+          <span
+            key={i}
+            className="particle absolute h-1.5 w-1.5 rounded-full bg-white/40"
+            style={{
+              left: `${(i * 53) % 100}%`,
+              animationDelay: `${-(i * 1.7)}s`,
+              animationDuration: `${9 + (i % 5) * 2}s`,
+            }}
+          />
+        ))}
+      </div>
       <div className="landing-hero text-center">
           <div className="font-display inline-block rounded-full border border-white/15 bg-white/5 px-4 py-1 text-xs font-bold uppercase tracking-[.25em] text-white/70">
             No accounts · No installs · 2–8 players
           </div>
-        <h1 className="font-display mt-4 text-5xl font-extrabold leading-none tracking-tight md:text-7xl">
+        <h1 className="logo-glow font-display mt-4 text-5xl font-extrabold leading-none tracking-tight md:text-7xl">
           ROOM<span style={{ background: 'linear-gradient(135deg,#FF8A00,#FF6B35 45%,#FF54BB)', WebkitBackgroundClip: 'text', color: 'transparent' }}>CADE</span>
         </h1>
         <p className="mx-auto mt-3 max-w-xl text-white/70">
@@ -123,9 +151,9 @@ export default function Landing() {
                 <button
                   key={c}
                   onClick={() => setColor(c)}
-                  aria-label={c}
-                  className={`relative flex h-10 w-10 items-center justify-center rounded-xl border-2 text-base transition-all hover:scale-110 ${
-                    isSelected ? 'ring-2 ring-white scale-110' : 'opacity-70 hover:opacity-100'
+                  aria-label={AVATAR_NAMES[c] ?? c}
+                  className={`group relative flex h-10 w-10 items-center justify-center rounded-xl border-2 text-base transition-all hover:scale-110 ${
+                    isSelected ? 'ring-2 ring-white scale-110 avatar-bounce' : 'opacity-70 hover:opacity-100'
                   }`}
                   style={{
                     background: c,
@@ -134,6 +162,9 @@ export default function Landing() {
                   }}
                 >
                   <span className="drop-shadow-sm">{icon}</span>
+                  <span className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-lg bg-black/80 px-2 py-1 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                    {AVATAR_NAMES[c] ?? 'Avatar'}
+                  </span>
                 </button>
               );
             })}
@@ -145,7 +176,7 @@ export default function Landing() {
             <div className="font-display text-lg font-extrabold">Start a game night</div>
             <div className="text-xs text-white/60">Cartridge: <span className="font-bold text-[#FFC53D]">{games.find((g) => g.id === selectedGame)?.n}</span></div>
             <div className="relative">
-              <button onClick={doCreate} disabled={busy || !name.trim()} className="btn-neon mt-2 w-full px-4 py-3 font-display text-lg font-extrabold disabled:opacity-50 disabled:cursor-not-allowed">
+              <button onClick={doCreate} disabled={busy || !name.trim()} className="btn-neon pulse-glow mt-2 w-full px-4 py-4 font-display text-xl font-extrabold disabled:opacity-50 disabled:cursor-not-allowed">
                 {busy ? '…' : `＋ Create room (${games.find((g) => g.id === selectedGame)?.n})`}
               </button>
               {!name.trim() && (
@@ -195,6 +226,9 @@ export default function Landing() {
         })}
       </div>
       <p className="mt-6 text-center text-xs text-white/40">Two tabs on this machine = two players. Open a second tab, join with the same code, play the full night.</p>
+      <footer className="mt-10 w-full border-t border-white/10 pt-4 text-center text-[11px] text-white/35">
+        <span className="font-display font-bold tracking-wide text-white/50">ROOMCADE</span> · v0.1.0 · 9 games · built for game night
+      </footer>
     </main>
   );
 }

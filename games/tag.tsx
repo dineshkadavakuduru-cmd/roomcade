@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import type { GameModule } from './registry';
-import { awardScores, dispatchLive, getSessionUid, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
+import { awardScores, dispatchLive, getSessionUid, patchRoom, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
+import { Confetti, GameHeader } from '@/components/GameChrome';
 import type { Action, LiveState, RoomMeta } from '@/lib/types';
 
 const ARENA_R = 7;
@@ -31,19 +32,25 @@ function applyAction(state: LiveState, action: Action): LiveState {
     case 'start':
       return { ...init(action.payload.playerUids), phase: 'playing', startedAt: Date.now(), itUid: action.payload.itUid };
     case 'move': {
-      const positions = { ...(s.positions || {}), [action.uid]: action.payload.pos };
-      // tag transfer on contact
+      const raw = action.payload.pos as { x: number; z: number };
+      // keep everyone inside the circular arena
+      const d = Math.hypot(raw.x, raw.z);
+      const pos = d > ARENA_R ? { x: (raw.x / d) * ARENA_R, z: (raw.z / d) * ARENA_R } : raw;
+      const positions = { ...(s.positions || {}), [action.uid]: pos };
+      // Symmetric tag transfer: whenever any player is on top of the current "it",
+      // the tag transfers. Works whether the runner or "it" is the one moving,
+      // and never re-tags the player who just became it in the same action.
       let itUid = s.itUid;
-      if (action.uid === s.itUid) {
-        for (const [u, p] of Object.entries(positions)) {
-          if (u === s.itUid) continue;
-          const it = positions[s.itUid];
-          if (it && Math.hypot(p.x - it.x, p.z - it.z) < TAG_DIST) { itUid = u; break; }
-        }
-      } else {
-        const me = action.payload.pos as { x: number; z: number };
-        const it = positions[s.itUid];
-        if (it && Math.hypot(me.x - it.x, me.z - it.z) < TAG_DIST) itUid = action.uid;
+      const itPos = positions[s.itUid];
+      if (itPos) {
+        const tagger = action.uid !== s.itUid
+          ? (Math.hypot(pos.x - itPos.x, pos.z - itPos.z) < TAG_DIST ? action.uid : null)
+          : Object.keys(positions).find((u) => {
+              if (u === s.itUid) return false;
+              const p = positions[u]!;
+              return Math.hypot(p.x - itPos.x, p.z - itPos.z) < TAG_DIST;
+            }) ?? null;
+        if (tagger) itUid = tagger;
       }
       return { ...s, positions, itUid };
     }
@@ -88,12 +95,18 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const [live, setL] = useState<TState | null>(null);
   const [room, setRoom] = useState<RoomMeta | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [stick, setStick] = useState({ x: 0, y: 0 });
+  // Joystick values live in a ref so the movement loop always reads fresh values
+  // (the loop only re-runs when the phase changes, so React state would be stale).
+  const stick = useRef({ x: 0, y: 0 });
+  const [stickUi, setStickUi] = useState({ x: 0, y: 0 });
   const keys = useRef<Record<string, boolean>>({});
   const lastSent = useRef(0);
+  const lastFrame = useRef(0);
   const local = useRef({ x: 0, z: 0 });
   const isHost = room?.hostId === uid;
+  const isHostRef = useRef(isHost);
   const awardedRef = useRef(false);
+  const [myPos, setMyPos] = useState({ x: 0, z: 0 });
 
   useEffect(() => subscribeLive(roomCode, (s) => setL((s as TState) ?? null)), [roomCode]);
   useEffect(() => subscribeRoom(roomCode, setRoom), [roomCode]);
@@ -109,28 +122,39 @@ function GameScene({ roomCode }: { roomCode: string }) {
     return () => { window.removeEventListener('keydown', dn); window.removeEventListener('keyup', up); };
   }, []);
 
+  useEffect(() => { isHostRef.current = isHost; }, [isHost]);
+
   const timeLeft = live?.phase === 'playing' ? Math.max(0, ROUND_SECS - Math.floor((now - live.startedAt) / 1000)) : ROUND_SECS;
 
-  // movement loop: 10Hz broadcast, local prediction
+  // movement loop: 10Hz broadcast, delta-time local prediction
   useEffect(() => {
     if (live?.phase !== 'playing') return;
     const start = live.positions[uid] ?? { x: 0, z: 0 };
     local.current = { ...start };
+    setMyPos({ ...start });
+    lastFrame.current = 0;
     let raf = 0;
-    const loop = () => {
+    const loop = (t: number) => {
       raf = requestAnimationFrame(loop);
+      const prev = lastFrame.current || t;
+      const dt = Math.min(0.1, (t - prev) / 1000);
+      lastFrame.current = t;
       const k = keys.current;
-      let dx = (k['d'] || k['arrowright'] ? 1 : 0) - (k['a'] || k['arrowleft'] ? 1 : 0) + stick.x;
-      let dz = (k['s'] || k['arrowdown'] ? 1 : 0) - (k['w'] || k['arrowup'] ? 1 : 0) + stick.y;
+      let dx = (k['d'] || k['arrowright'] ? 1 : 0) - (k['a'] || k['arrowleft'] ? 1 : 0) + stick.current.x;
+      let dz = (k['s'] || k['arrowdown'] ? 1 : 0) - (k['w'] || k['arrowup'] ? 1 : 0) + stick.current.y;
       const len = Math.hypot(dx, dz);
       if (len < 0.01) return;
-      dx = (dx / Math.max(1, len)) * 0.09;
-      dz = (dz / Math.max(1, len)) * 0.09;
-      const nx = Math.max(-ARENA_R, Math.min(ARENA_R, local.current.x + dx));
-      const nz = Math.max(-ARENA_R, Math.min(ARENA_R, local.current.z + dz));
-      local.current = { x: nx, z: nz };
+      const speed = 5.4 * dt; // units per second, frame-rate independent
+      const step = speed / Math.max(1, len);
+      const nx = local.current.x + dx * step;
+      const nz = local.current.z + dz * step;
+      const d = Math.hypot(nx, nz);
+      const cx = d > ARENA_R ? (nx / d) * ARENA_R : nx;
+      const cz = d > ARENA_R ? (nz / d) * ARENA_R : nz;
+      local.current = { x: cx, z: cz };
       if (Date.now() - lastSent.current > 100) {
         lastSent.current = Date.now();
+        setMyPos({ x: cx, z: cz });
         dispatchLive(roomCode, { type: 'move', uid, payload: { pos: { ...local.current } } }, applyAction, () => init(room?.players.map((p) => p.uid) ?? []));
       }
     };
@@ -140,14 +164,17 @@ function GameScene({ roomCode }: { roomCode: string }) {
 
   useEffect(() => {
     if (live?.phase === 'playing' && timeLeft <= 0 && !awardedRef.current) {
+      // Only the host awards scores and closes out the round, so points and the
+      // 'end' action aren't dispatched once per client.
+      if (!isHostRef.current) return;
       awardedRef.current = true;
       // winner: everyone except "it"? Spec: last untagged wins — with transfer tag,
       // the player who is NOT it at timeout wins a share; "it" loses.
       const winners = (room?.players ?? []).filter((p) => p.uid !== live.itUid);
       const awards: Record<string, number> = {};
       winners.forEach((w) => { awards[w.uid] = 100; });
-      awardScores(roomCode, awards).then(() => {
-        if (isHost) dispatchLive(roomCode, { type: 'end', uid, payload: { winnerUid: winners[0]?.uid ?? live.itUid } }, applyAction, () => init([]));
+      void awardScores(roomCode, awards).then(() => {
+        void dispatchLive(roomCode, { type: 'end', uid, payload: { winnerUid: winners[0]?.uid ?? live.itUid } }, applyAction, () => init([]));
       });
     }
   }, [timeLeft]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -165,13 +192,27 @@ function GameScene({ roomCode }: { roomCode: string }) {
     const t = e.touches[0]!;
     const dx = (t.clientX - (el.left + el.width / 2)) / (el.width / 2);
     const dy = (t.clientY - (el.top + el.height / 2)) / (el.height / 2);
-    setStick({ x: Math.max(-1, Math.min(1, dx)), y: Math.max(-1, Math.min(1, dy)) });
+    const next = { x: Math.max(-1, Math.min(1, dx)), y: Math.max(-1, Math.min(1, dy)) };
+    stick.current = next;
+    setStickUi(next);
   };
+  const resetStick = () => { stick.current = { x: 0, y: 0 }; setStickUi({ x: 0, y: 0 }); };
+
+  const goLobby = async () => {
+    await setLive(roomCode, null);
+    await patchRoom(roomCode, { status: 'lobby', currentGameId: null });
+  };
+
+  // Near the ring edge: clamp local prediction onto the boundary so the player
+  // sees the wall stopping them instead of sliding past the visual ring.
+  const edge = Math.hypot(myPos.x, myPos.z) / ARENA_R;
+  const onEdge = live?.phase === 'playing' && edge > 0.93;
 
   const itName = room?.players.find((p) => p.uid === live?.itUid)?.name;
 
   return (
     <div className="flex h-full flex-col gap-2">
+      <GameHeader name="Tag Arena" accent="#38BDF8" phase={live?.phase === 'playing' ? 'IT: ' + (itName ?? '—') : live?.phase} round={`${timeLeft}s`} playerCount={room?.players.length} />
       <div className="relative min-h-[340px] flex-1 overflow-hidden rounded-2xl border border-white/10">
         <Canvas camera={{ position: [0, 11, 7], fov: 50 }} dpr={[1, 1.75]}>
           <color attach="background" args={['#0d0d24']} />
@@ -189,7 +230,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
           {live && room && <Runners live={live} room={room} me={uid} />}
         </Canvas>
         <div className="absolute left-3 top-3 flex gap-2">
-          <span className="arcade-card px-3 py-1 font-display text-lg font-extrabold text-[#FFC53D]">⏱ {timeLeft}s</span>
+          <span className={`arcade-card tnum px-3 py-1 font-display text-lg font-extrabold text-[#FFC53D] ${timeLeft <= 10 && live?.phase === 'playing' ? 'timer-alert' : ''}`}>⏱ {timeLeft}s</span>
           {live?.phase === 'playing' && <span className="arcade-card px-3 py-1 text-sm font-bold text-[#FB4D6D]">🔥 {itName} is IT</span>}
         </div>
         {(!live || live.phase === 'waiting') && (
@@ -200,15 +241,22 @@ function GameScene({ roomCode }: { roomCode: string }) {
           </div>
         )}
         {live?.phase === 'done' && (
-          <div className="absolute inset-x-0 bottom-3 mx-auto w-fit arcade-card px-4 py-2 text-center">
+          <div className="absolute inset-x-0 bottom-3 mx-auto w-fit arcade-card phase-fade px-4 py-2 text-center">
+            <Confetti />
             <span className="font-display font-extrabold">🏁 {room?.players.find((p) => p.uid === live.winnerUid)?.name} survives! Everyone not-it scores +100.</span>
-            {isHost && <button onClick={() => setLive(roomCode, null)} className="btn-neon ml-2 rounded-xl px-4 py-1.5 text-sm font-bold">Lobby</button>}
+            {isHost && <button onClick={goLobby} className="btn-neon ml-2 rounded-xl px-4 py-1.5 text-sm font-bold">Lobby</button>}
+          </div>
+        )}
+        {onEdge && (
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 mx-auto w-fit -translate-y-1/2 rounded-xl border border-[#FB4D6D]/50 bg-[#FB4D6D]/20 px-3 py-1 text-xs font-bold text-[#FB4D6D]">
+            ⛔ Arena wall
           </div>
         )}
         {/* virtual joystick (touch) */}
-        <div ref={joyRef} onTouchMove={onStick} onTouchEnd={() => setStick({ x: 0, y: 0 })}
-          className="absolute bottom-4 right-4 flex h-28 w-28 items-center justify-center rounded-full border-2 border-white/25 bg-white/5 md:hidden">
-          <div className="h-12 w-12 rounded-full bg-white/30" style={{ transform: `translate(${stick.x * 20}px, ${stick.y * 20}px)` }} />
+        <div ref={joyRef} onTouchMove={onStick} onTouchEnd={resetStick}
+          className="absolute bottom-4 right-4 flex h-28 w-28 touch-none items-center justify-center rounded-full border-2 border-[#38BDF8]/50 bg-[#0d0d24]/70 shadow-[0_0_24px_rgba(56,189,248,0.35)] backdrop-blur-sm md:hidden">
+          <span className="pointer-events-none absolute -top-5 text-[10px] font-bold uppercase tracking-widest text-white/50">Drag to move</span>
+          <div className="h-12 w-12 rounded-full border border-white/50 bg-[#38BDF8]/70 shadow-[0_0_14px_#38BDF8]" style={{ transform: `translate(${stickUi.x * 20}px, ${stickUi.y * 20}px)` }} />
         </div>
       </div>
       <p className="hidden text-center text-sm text-white/50 md:block">Move with WASD or arrow keys — don’t get tagged. Tag transfers on contact.</p>

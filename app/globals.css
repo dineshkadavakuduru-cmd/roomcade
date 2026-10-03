@@ -18,7 +18,138 @@ html, body {
   color: var(--cream);
   font-family: "Nunito", system-ui, sans-serif;
   min-height: 100%;
+  overflow-x: hidden;
 }
+
+/* ---- Themed scrollbar ---- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,61,129,.45) rgba(255,255,255,.05);
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: rgba(255,255,255,.04); }
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(255,138,0,.7), rgba(255,61,129,.7));
+  border-radius: 999px;
+  border: 2px solid rgba(13,13,36,.9);
+}
+*::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #ff8a00, #ff3d81); }
+
+/* ---- Page-load fade ---- */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-fade { animation: fadeIn .5s ease-out both; }
+
+/* ---- Pulse glow for active/highlighted elements ---- */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,197,61,.0), 0 0 12px rgba(255,197,61,.25); }
+  50% { box-shadow: 0 0 0 6px rgba(255,197,61,.08), 0 0 26px rgba(255,197,61,.55); }
+}
+.pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+/* ---- Animated dots for "waiting for players" ---- */
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: .4; }
+  40% { transform: translateY(-5px); opacity: 1; }
+}
+.dot-pulse span {
+  display: inline-block;
+  width: 5px; height: 5px;
+  margin: 0 2px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: dot-bounce 1.2s infinite ease-in-out;
+}
+.dot-pulse span:nth-child(2) { animation-delay: .15s; }
+.dot-pulse span:nth-child(3) { animation-delay: .3s; }
+
+/* ---- Player-join "ding" pop ---- */
+@keyframes join-ding {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(52,211,153,.6); }
+  40% { transform: scale(1.12); box-shadow: 0 0 0 10px rgba(52,211,153,0); }
+  100% { transform: scale(1); }
+}
+.join-ding { animation: join-ding .6s ease-out; }
+
+/* ---- Cartridge parallax tilt on hover ---- */
+.tilt-card { transform-style: preserve-3d; transition: transform .25s ease, box-shadow .25s ease; }
+.tilt-card:hover { transform: perspective(700px) rotateX(6deg) rotateY(-7deg) translateY(-4px) scale(1.02); }
+
+/* ---- Game phase cross-fade ---- */
+@keyframes phaseIn {
+  from { opacity: 0; transform: translateY(10px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.phase-fade { animation: phaseIn .32s ease-out both; }
+
+/* ---- Low-timer pulse ---- */
+@keyframes timer-alert {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 0 0 0 rgba(251,77,109,0); border-color: rgba(251,77,109,.6); }
+  50% { box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 0 18px 2px rgba(251,77,109,.65); border-color: #FB4D6D; }
+}
+.timer-alert { animation: timer-alert 1s ease-in-out infinite; }
+
+/* ---- CSS-only confetti burst (win screens) ---- */
+.confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
+.confetti i {
+  position: absolute;
+  top: -10%;
+  width: 8px; height: 14px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: confetti-fall 2.6s ease-in forwards;
+}
+@keyframes confetti-fall {
+  0% { opacity: 1; transform: translateY(-20%) rotate(0deg); }
+  100% { opacity: 0; transform: translateY(560%) rotate(540deg); }
+}
+
+/* ---- Trophy bounce for recap ---- */
+@keyframes trophy-bounce {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-8px) rotate(3deg); }
+}
+.trophy-bounce { display: inline-block; animation: trophy-bounce 1.6s ease-in-out infinite; }
+
+@keyframes sparkle {
+  0%, 100% { opacity: .2; transform: scale(.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+.sparkle { animation: sparkle 1.4s ease-in-out infinite; }
+
+/* ---- Landing: slow gradient mesh blobs + floating particles ---- */
+@keyframes mesh-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(40px, -30px) scale(1.15); }
+  66% { transform: translate(-30px, 25px) scale(.92); }
+}
+.mesh-blob { animation: mesh-drift 20s ease-in-out infinite; }
+
+@keyframes float-up {
+  0% { transform: translateY(20vh) scale(.6); opacity: 0; }
+  15% { opacity: .8; }
+  85% { opacity: .5; }
+  100% { transform: translateY(-80vh) scale(1); opacity: 0; }
+}
+.particle { bottom: -5vh; animation: float-up 12s linear infinite; }
+
+/* ---- Pulsing logo glow ---- */
+@keyframes logo-pulse {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(255,138,0,.35)); }
+  50% { filter: drop-shadow(0 0 26px rgba(255,84,187,.7)); }
+}
+.logo-glow { animation: logo-pulse 3s ease-in-out infinite; }
+
+/* ---- Avatar selection bounce ---- */
+@keyframes avatar-bounce {
+  0% { transform: scale(1.1); }
+  40% { transform: scale(1.28) translateY(-4px); }
+  70% { transform: scale(1.05); }
+  100% { transform: scale(1.1); }
+}
+.avatar-bounce { animation: avatar-bounce .4s ease-out; }
 
 .font-display {
   font-family: "Baloo 2", "Nunito", system-ui, sans-serif;
@@ -26,6 +157,14 @@ html, body {
 }
 
 .tnum { font-variant-numeric: tabular-nums; }
+
+/* Gradient text — neon orange → hot pink */
+.text-gradient {
+  background: linear-gradient(135deg, #ff8a00, #ff6b35 45%, #ff54bb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
 
 /* Rainbow rule: depth from inset highlights, not drop shadows.
    Outer neon glow is reserved for primary CTAs only (arcade signature). */
@@ -35,6 +174,17 @@ html, body {
   border-radius: 28px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.16);
   backdrop-filter: blur(12px);
+  overflow: visible;
+}
+
+/* Stronger glassmorphism variant */
+.glass-card {
+  background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.03));
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 28px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 0 24px rgba(139,92,246,.18);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
   overflow: visible;
 }
 
@@ -49,9 +199,28 @@ html, body {
   border-radius: 999px;
   transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
 }
-.btn-neon:hover { transform: translateY(-1px) scale(1.02); filter: brightness(1.06); }
+.btn-neon:hover {
+  transform: translateY(-1px) scale(1.02);
+  filter: brightness(1.06);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 0 40px 6px rgba(255,61,129,.65);
+}
 .btn-neon:active { transform: translateY(1px) scale(.98); }
-.btn-neon:disabled { opacity: .45; transform: none; }
+.btn-neon:disabled { opacity: .45; transform: none; cursor: not-allowed; }
+
+/* Secondary action — violet → blue gradient */
+.btn-neon-secondary {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1 50%, #38bdf8);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 0 20px rgba(99,102,241,.4);
+  border-radius: 999px;
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+.btn-neon-secondary:hover {
+  transform: translateY(-1px) scale(1.02);
+  filter: brightness(1.08);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 0 34px 5px rgba(56,189,248,.55);
+}
+.btn-neon-secondary:active { transform: translateY(1px) scale(.98); }
+.btn-neon-secondary:disabled { opacity: .45; transform: none; cursor: not-allowed; }
 
 .btn-ghost {
   border-radius: 999px;
@@ -107,3 +276,17 @@ html, body {
 }
 
 canvas { touch-action: none; }
+
+/* Minimum comfortable touch targets on mobile */
+@media (max-width: 640px) {
+  button { min-height: 44px; }
+  input, select { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

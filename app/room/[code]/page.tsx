@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Canvas } from '@react-three/fiber';
 import { AVATAR_COLORS, type RoomMeta } from '@/lib/types';
@@ -32,6 +32,9 @@ export default function Lobby() {
   const [sel, setSel] = useState(0);
   const [warp, setWarp] = useState(false);
   const [recap, setRecap] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [joinDing, setJoinDing] = useState(false);
+  const prevCount = useRef(0);
   const uid = useMemo(() => (typeof window === 'undefined' ? '' : getSessionUid()), []);
   const me = room?.players.find((p) => p.uid === uid);
   const isHost = room?.hostId === uid;
@@ -56,6 +59,24 @@ export default function Lobby() {
   }, [room?.status, room?.currentGameId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { popIn('.lobby-pop'); }, [room?.players.length]);
+
+  // Visual "ding" when a new player joins (CSS animation, no audio).
+  useEffect(() => {
+    const n = room?.players.length ?? 0;
+    if (prevCount.current && n > prevCount.current) {
+      setJoinDing(true);
+      const t = window.setTimeout(() => setJoinDing(false), 700);
+      prevCount.current = n;
+      return () => window.clearTimeout(t);
+    }
+    prevCount.current = n;
+  }, [room?.players.length]);
+
+  const copyInvite = () => {
+    navigator.clipboard?.writeText(`${location.origin}/room/${code}`).catch(() => {});
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  };
 
   // Synchronize cartridge selection across all players via room.selectedGameId
   useEffect(() => {
@@ -87,7 +108,7 @@ export default function Lobby() {
   };
 
   const startGame = async () => {
-    if (!isHost) return;
+    if (!isHost || !eligible) return;
     await setLive(code, null);
     await patchRoom(code, { status: 'in-game', currentGameId: game.id, selectedGameId: game.id });
     setWarp(true);
@@ -122,7 +143,12 @@ export default function Lobby() {
         </div>
         <div className="ml-auto flex items-center gap-2">
           {me && <span className="arcade-card px-3 py-1.5 text-sm font-semibold">🎭 {me.name} {isHost && '· HOST'}</span>}
-          <button onClick={() => { navigator.clipboard?.writeText(`${location.origin}/room/${code}`).catch(() => {}); }} className="rounded-xl bg-white/10 px-3 py-1.5 text-sm font-bold hover:bg-white/20">Copy invite link</button>
+          <button
+            onClick={copyInvite}
+            className={`rounded-xl px-3 py-1.5 text-sm font-bold transition-all ${copied ? 'bg-[#34D399]/30 text-[#34D399] ring-1 ring-[#34D399]' : 'bg-white/10 hover:bg-white/20'}`}
+          >
+            {copied ? '✓ Copied!' : 'Copy invite link'}
+          </button>
         </div>
       </header>
 
@@ -140,7 +166,10 @@ export default function Lobby() {
             >
               <span className="font-display font-extrabold" style={{ color: game.accent }}>{game.displayName}</span>
               <span className="text-sm text-white/60"> · {game.tagline} · {game.minPlayers}–{game.maxPlayers} players</span>
-              {!eligible && <span className="ml-1 text-xs font-bold text-[#FFC53D]">(solo test available)</span>}
+              {!eligible && <span className="ml-1 text-xs font-bold text-[#FFC53D]">needs {game.minPlayers}+ players</span>}
+              {!eligible && (
+                <span className="dot-pulse ml-1 align-middle text-[#FFC53D]"><span /><span /><span /></span>
+              )}
             </div>
             <button onClick={() => selectGame(sel + 1)} className="arcade-card px-3 py-2 font-bold hover:bg-white/20">›</button>
           </div>
@@ -154,13 +183,14 @@ export default function Lobby() {
             <div className="flex flex-col gap-1.5">
               <button
                 onClick={startGame}
-                className={`btn-neon w-full px-4 py-3 font-display text-lg font-extrabold ${!eligible ? 'bg-gradient-to-r from-[#FF6B35] to-[#FF3D81] ring-1 ring-white/30' : ''}`}
+                disabled={!eligible}
+                className={`btn-neon w-full px-4 py-3 font-display text-lg font-extrabold ${!eligible ? 'cursor-not-allowed opacity-50' : ''}`}
               >
-                {eligible ? `▶ Start ${game.displayName}` : `⚡ Play ${game.displayName} (Solo / Test)`}
+                {eligible ? `▶ Start ${game.displayName}` : `Need ${game.minPlayers}+ players to start`}
               </button>
               {!eligible && (
                 <span className="text-center text-xs font-medium text-white/50">
-                  Full party needs {game.minPlayers}+ players ({room?.players.length ?? 0} here) · Test mode unlocked
+                  {room?.players.length ?? 0} in the lounge · {game.displayName} needs {game.minPlayers}+ players
                 </span>
               )}
             </div>
@@ -197,7 +227,7 @@ export default function Lobby() {
               <button
                 key={g.id}
                 onClick={() => selectGameById(g.id)}
-                className={`arcade-card relative flex flex-col items-start p-3 text-left transition-all duration-200 hover:-translate-y-0.5 ${
+                className={`arcade-card tilt-card relative flex flex-col items-start p-3 text-left ${
                   isCurrent ? 'ring-2 ring-white shadow-lg' : 'opacity-70 hover:opacity-100'
                 }`}
                 style={{
@@ -220,8 +250,11 @@ export default function Lobby() {
 
       <div className="arcade-card p-4">
         <div className="flex items-center justify-between pb-3">
-          <div className="font-display text-sm font-bold uppercase tracking-widest text-white/60">
+          <div className={`font-display flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-white/60 ${joinDing ? 'join-ding' : ''}`}>
             👥 Lounge Players ({room?.players.length ?? 0}/8)
+            {room && room.players.length >= 2 && (
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+            )}
           </div>
           <span className="text-xs text-white/40">Ready to play</span>
         </div>
@@ -265,7 +298,9 @@ export default function Lobby() {
       {(room?.status === 'recap' || recap) && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4" onClick={() => { setRecap(false); if (room?.status === 'recap' && isHost) backToLobby(); }}>
           <div className="arcade-card w-full max-w-2xl overflow-hidden p-4" onClick={(e) => e.stopPropagation()}>
-            <div className="font-display text-center text-2xl font-extrabold">🏆 Night recap</div>
+            <div className="font-display text-center text-2xl font-extrabold">
+              <span className="trophy-bounce">🏆</span> Night recap <span className="sparkle">✨</span>
+            </div>
             <div className="h-72"><RecapPodium players={room?.players ?? []} /></div>
             <Scoreboard players={room?.players ?? []} />
             <button onClick={() => { setRecap(false); if (room?.status === 'recap' && isHost) backToLobby(); }} className="btn-neon mt-2 w-full rounded-xl px-4 py-2.5 font-bold">Back to lounge</button>

@@ -20,10 +20,24 @@ self-contained modules that appear in the lobby automatically (see
 | **Trivia Podiums** | Quiz show — buzz in for a spotlight + camera push-in, correct answers flash green | 2–8 |
 | **Tag Arena** | Real-time chase — one player is "it", tag transfers on contact, 60s timer (WASD/arrows + touch joystick) | 2–8 |
 | **Quick Draw Duel** | High-noon showdown — countdown → GO! Fastest reaction wins. Best of 5. Fire early = instant loss | **2 only** |
-| **Tug of War** | Rapid tap to pull a rope across a chasm. Rope visibly sags and tenses. First to drag marker to your threshold wins | **2 only** |
+| **Tug of War** | Rapid tap to pull a rope across a chasm. Rope visibly sags and tenses. First to drag the marker to your threshold (or lead at the 30s buzzer) wins | **2 only** |
 | **Fog Duel** | 3D battleship — secretly place a fleet on your grid, then take turns calling shots on the opponent's fogged grid | **2 only** |
+| **Truth or Dare** | Campfire confession game — host picks a player, they pick Truth or Dare, and the room votes whether they did it. Truth ✅ = +50, Dare ✅ = +100 | 3–8 |
+| **Movie Trivia** | Cinema quiz show — buzz in first, then answer for +100. 100+ questions across classics, blockbusters, animation, horror, sci-fi and more | 2–8 |
 
-The lobby carousel shows **all games**, graying out ones that need more players than currently in the room — a 2-player room always sees the three duel games as playable.
+The lobby carousel shows **all games**, graying out ones that need more players than currently in the room — a 2-player room always sees the three duel games and Movie Trivia as playable. A game can only be started once the room meets its minimum player count.
+
+## Question Banks
+
+Every question/prompt bank is 100+ entries and uses a host-generated shuffled
+order stored in shared live state, so all players see the same sequence and no
+prompt repeats within a session:
+
+| Game | Pool | No-repeat system |
+|------|------|------------------|
+| **Truth or Dare** | 100+ truths · 100+ dares (edgy party tone) | Shuffled `truthOrder` / `dareOrder` seeded by the host at start; used indices are tracked as the deck is consumed |
+| **Movie Trivia** | 100+ questions across classic films, modern blockbusters, animation, horror, sci-fi, comedy, Oscar winners, directors, scores, box office, behind-the-scenes, franchises, and international cinema | Shuffled `qOrder` seeded by the host at start; playthroughs advance through the shuffled order |
+| **Trivia Podiums** | 100+ general-knowledge questions across science, history, geography, tech, sports, music, literature, food, pop culture, space, and video games | Shuffled `qOrder` seeded by the host at start; playthroughs advance through the shuffled order |
 
 ## Quick start
 
@@ -69,9 +83,13 @@ app/
   not-found.tsx               # branded 404
 games/
   registry.ts                 # shared GameModule interface
-  index.tsx                   # registry + per-game lazy loader
+  index.tsx                   # GAMES + GAME_LIST registry + per-game lazy loader (9 games)
+                              #   note: registry.ts GAME_ORDER still lists only 4 legacy ids
+                              #   (sculptionary, werewolf, trivia, tag) and is not used for
+                              #   lobby ordering — GAME_LIST in index.tsx is the source of truth
   sculptionary.tsx | werewolf.tsx | trivia.tsx | tag.tsx
   quickdraw.tsx | tugofwar.tsx | fogduel.tsx
+  truthordare.tsx | movietrivia.tsx
 components/
   LobbyScene.tsx | Avatar3D.tsx | PortalTransition.tsx |
   Scoreboard.tsx | RecapPodium.tsx
@@ -128,11 +146,12 @@ npm start        # serve production build
 
 ## Definition of done (status)
 
-- [x] Room minimum lowered to 2; lobby shows all games with clear "needs N+ players" labels for ineligible ones
-- [x] Two clients can create, join by code, and finish a round of all 7 games (local backend)
-- [x] Three new 2-player duel games complete full rounds without errors
+- [x] Room minimum lowered to 2; lobby shows all games with clear "needs N+ players" labels for ineligible ones, and start is disabled until the room is eligible (no solo/test mode)
+- [x] Two clients can create, join by code, and finish a round of all 9 games (local backend)
+- [x] Three 2-player duel games complete full rounds without errors
+- [x] Tag Arena runs frame-rate-independent movement with a working touch joystick, symmetric tag transfer, and host-only scoring
+- [x] Question banks expanded to 100+ entries each with shuffle-based no-repeat ordering
 - [x] One shared lobby↔game transition across all games
 - [x] Scores persist across a multi-game session; recap crowns the winner
 - [x] Production build is clean; all routes serve 200
-- [ ] Playwright two-client pass with desktop/mobile screenshots (needs a browser session)
 - [ ] Cross-device rooms (needs Firebase env vars — see above)

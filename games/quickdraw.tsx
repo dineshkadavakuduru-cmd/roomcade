@@ -2,11 +2,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import type { GameModule } from './registry';
-import { awardScores, dispatchLive, getSessionUid, patchRoom, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
+import { awardScores, dispatchLive, getSessionUid, subscribeLive, subscribeRoom } from '@/lib/room-store';
 import type { Action, LiveState, RoomMeta } from '@/lib/types';
 import { flashBuzzer, countUp } from '@/lib/anime';
+import { Confetti, GameHeader, ReturnToLounge } from '@/components/GameChrome';
 
-const ROUNDS_TO_WIN = 3;
+const ROUNDS_TO_WIN = 5;
 const COUNTDOWN_STAGES = ['🔴', '🟡', '🟢'];
 
 interface QState extends LiveState {
@@ -44,11 +45,12 @@ function applyAction(state: LiveState, action: Action): LiveState {
       return { ...init(action.payload.playerUids), phase: 'countdown', round: 1, goAt, startedAt: Date.now() };
     }
     case 'react': {
-      if (s.phase !== 'armed') {
-        // early shot = lose round
+      if (s.phase === 'countdown') {
+        // jumped the gun — early shot loses the round
         const other = Object.keys(s.scores).find((u) => u !== action.uid) || null;
         return { ...s, phase: 'round-end', earlyLoser: action.uid, roundWinner: other };
       }
+      if (s.phase !== 'armed') return s; // ignore stray reactions (round-end / done)
       const reactions = { ...s.reactions, [action.uid]: Date.now() };
       const expected = Math.max(1, Math.min(2, Object.keys(s.scores).length));
       if (Object.keys(reactions).length >= expected) {
@@ -64,10 +66,13 @@ function applyAction(state: LiveState, action: Action): LiveState {
         }
         const scores = { ...s.scores, [roundWinner]: (s.scores[roundWinner] ?? 0) + 1 };
         const winner = scores[roundWinner]! >= ROUNDS_TO_WIN ? roundWinner : null;
-        return { ...s, phase: 'round-end', reactions, roundWinner, scores, winner };
+        return { ...s, phase: winner ? 'done' : 'round-end', reactions, roundWinner, scores, winner };
       }
       return { ...s, reactions };
     }
+    case 'arm':
+      if (s.phase !== 'countdown' || Date.now() < s.goAt) return s;
+      return { ...s, phase: 'armed' };
     case 'next-round': {
       if (s.winner) return { ...s, phase: 'done' };
       const goAt = Date.now() + 1000 + Math.random() * 2000;
@@ -148,19 +153,28 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const act = (type: string, payload: any = {}) =>
     dispatchLive(roomCode, { type, uid, payload }, applyAction, () => init(room?.players.map((p) => p.uid) ?? []));
 
+  const isHost = room?.hostId === uid;
+  // Host flips the shared phase to 'armed' at goAt so DRAW! goes live for both players.
+  useEffect(() => {
+    if (!isHost || !live) return;
+    if (live.phase === 'countdown' && now >= live.goAt) act('arm');
+  }, [isHost, live?.phase, live?.goAt, now]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const onReact = () => {
-    if (live?.phase !== 'armed') return;
+    if (!live || (live.phase !== 'armed' && live.phase !== 'countdown')) return;
     act('react');
     setScreenFlash(true);
     setTimeout(() => setScreenFlash(false), 80);
     flashBuzzer('#draw-btn', '#FFC53D');
   };
 
+  const awardedRoundRef = useRef<number | null>(null);
   useEffect(() => {
-    if (live?.phase === 'round-end' && live.roundWinner === uid) {
+    if (live?.phase === 'round-end' && live.roundWinner === uid && awardedRoundRef.current !== live.round) {
+      awardedRoundRef.current = live.round;
       awardScores(roomCode, { [uid]: 50 });
     }
-  }, [live?.phase, live?.roundWinner]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [live?.phase, live?.roundWinner, live?.round]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (live?.winner && !awardedRef.current) {
@@ -170,7 +184,9 @@ function GameScene({ roomCode }: { roomCode: string }) {
   }, [live?.winner]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="flex h-full flex-col gap-2 lg:flex-row">
+    <div className="flex h-full flex-col gap-2">
+      <GameHeader name="Quick Draw Duel" accent="#FFC53D" phase={live?.phase} round={`Round ${live?.round ?? 1}/${ROUNDS_TO_WIN}`} playerCount={room?.players.length} />
+      <div className="flex h-full flex-col gap-2 lg:flex-row">
       <div className="relative min-h-[360px] flex-1 overflow-hidden rounded-2xl border border-white/10">
         <Canvas camera={{ position: [0, 2.5, 7], fov: 45 }} dpr={[1, 1.75]}>
           <color attach="background" args={['#0d0d24']} />
@@ -239,8 +255,10 @@ function GameScene({ roomCode }: { roomCode: string }) {
             {live.phase === 'countdown' && (
               <div className="text-center text-white/70">Get ready… <span className="font-display font-extrabold text-[#FFC53D]">{timeToGo}s</span></div>
             )}
-            {live.phase === 'armed' && (
-              <button id="draw-btn" onClick={onReact} className="btn-neon w-full py-4 font-display text-xl font-extrabold">🔫 DRAW!</button>
+            {(live.phase === 'armed' || live.phase === 'countdown') && (
+              <button id="draw-btn" onClick={onReact} className="btn-neon w-full py-4 font-display text-xl font-extrabold">
+                {live.phase === 'armed' ? '🔫 DRAW!' : '✋ WAIT FOR IT…'}
+              </button>
             )}
             {live.phase === 'round-end' && (
               <div className="text-center">
@@ -250,28 +268,25 @@ function GameScene({ roomCode }: { roomCode: string }) {
                 {live.roundWinner === opponent?.uid && !live.earlyLoser && <p className="text-[#FB4D6D] font-bold">⚡ Opponent was faster.</p>}
               </div>
             )}
-            {live.phase === 'round-end' && !live.winner && (
+            {live.phase === 'round-end' && !live.winner && isHost && (
               <button onClick={() => act('next-round')} className="btn-neon w-full px-3 py-2 font-bold">Next Round ▶</button>
+            )}
+            {live.phase === 'round-end' && !live.winner && !isHost && (
+              <p className="text-center text-sm text-white/50">Waiting for host to start the next round…</p>
             )}
           </div>
         )}
         {live?.phase === 'done' && (
-          <div className="arcade-card p-4 text-center">
+          <div className="arcade-card phase-fade relative p-4 text-center">
+            {live.winner === uid && <Confetti />}
             <div className="font-display text-xl font-extrabold text-[#FFC53D]">
               {live.winner === uid ? '🏆 YOU WIN!' : '💀 YOU LOSE'}
             </div>
             <p className="text-sm text-white/70">Final: {live.scores[uid] ?? 0} — {live.scores[opponent?.uid ?? ''] ?? 0}</p>
-            <button
-              onClick={async () => {
-                await setLive(roomCode, null);
-                await patchRoom(roomCode, { status: 'lobby', currentGameId: null });
-              }}
-              className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold"
-            >
-              🏠 Return to Lounge
-            </button>
+            <ReturnToLounge roomCode={roomCode} className="mt-2" />
           </div>
         )}
+      </div>
       </div>
     </div>
   );

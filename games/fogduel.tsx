@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import type { GameModule } from './registry';
-import { awardScores, dispatchLive, getSessionUid, patchRoom, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
+import { awardScores, dispatchLive, getSessionUid, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
 import type { Action, LiveState, RoomMeta } from '@/lib/types';
 import { flashBuzzer } from '@/lib/anime';
+import { Confetti, GameHeader, ReturnToLounge } from '@/components/GameChrome';
 
 const GRID_SIZE = 5;
 const SHIPS = [
@@ -16,15 +17,15 @@ const SHIPS = [
 interface Cell { shipId: string | null; hit: boolean; revealed: boolean }
 type Grid = Cell[][];
 
+interface ShipManifest { id: string; cells: string[]; sunk: boolean }
+
 interface FState extends LiveState {
   phase: 'placing' | 'playing' | 'done';
-  myGrid: Grid;
-  oppGrid: Grid;
-  myShips: { id: string; cells: string[]; sunk: boolean }[];
-  oppShips: { id: string; cells: string[]; sunk: boolean }[];
+  // Per-player data: each uid maps to THEIR OWN fleet grid + ship manifest.
+  grids: Record<string, Grid>;
+  ships: Record<string, ShipManifest[]>;
   turn: string | null;
   winner: string | null;
-  placements: Record<string, Grid>;
   ready: Record<string, boolean>;
 }
 function emptyGrid(): Grid {
@@ -38,13 +39,10 @@ function init(uids: string[]): FState {
   if (uids[1]) ready[uids[1]] = false;
   return {
     phase: 'placing',
-    myGrid: emptyGrid(),
-    oppGrid: emptyGrid(),
-    myShips: [],
-    oppShips: [],
+    grids: {},
+    ships: {},
     turn: uids[0] ?? null,
     winner: null,
-    placements: {},
     ready,
   };
 }
@@ -74,77 +72,59 @@ function applyAction(state: LiveState, action: Action): LiveState {
   switch (action.type) {
     case 'place': {
       if (s.phase !== 'placing') return s;
-      const { grid, ships } = action.payload;
-      const placements = { ...s.placements, [action.uid]: grid };
+      // Store each player's fleet under their own uid — no my/opp swapping.
+      const grids = { ...s.grids, [action.uid]: action.payload.grid };
+      const ships = { ...s.ships, [action.uid]: action.payload.ships ?? [] };
       const ready = { ...s.ready, [action.uid]: true };
-      const allReady = Object.values(ready).every((v) => v);
+      const uids = Object.keys(ready);
+      const allReady = uids.length >= 2 && uids.every((u) => ready[u] && grids[u]);
       if (allReady) {
-        const uids = Object.keys(placements);
-        const [u1, u2] = uids;
-        const oppUid = u1 === action.uid ? u2 : u1;
-        const oppGrid = placements[oppUid];
-        const oppShips: { id: string; cells: string[]; sunk: boolean }[] = [];
-        const seen = new Set<string>();
-        oppGrid?.flatMap((row: Cell[]) => row.filter((c: Cell) => c.shipId)).forEach((c: Cell) => {
-          if (!seen.has(c.shipId!)) {
-            seen.add(c.shipId!);
-            oppShips.push({ id: c.shipId!, cells: [], sunk: false });
-          }
-        });
-        return {
-          ...s,
-          phase: 'playing',
-          myGrid: placements[action.uid],
-          oppGrid: oppGrid ?? emptyGrid(),
-          myShips: ships,
-          oppShips,
-          turn: uids[0],
-          placements,
-          ready,
-        };
+        return { ...s, phase: 'playing', grids, ships, ready, turn: uids[0]! };
       }
-      return { ...s, placements, ready };
+      return { ...s, grids, ships, ready };
     }
     case 'fire': {
       if (s.phase !== 'playing' || s.turn !== action.uid) return s;
-      const { target } = action.payload;
-      const uids = Object.keys(s.placements);
-      const [u1, u2] = uids;
-      const isU1 = action.uid === u1;
-      const oppGrid = isU1 ? s.oppGrid : s.myGrid;
-      const { r, c } = parseKey(target);
-      if (oppGrid[r][c].hit) return s;
-      const hit = !!oppGrid[r][c].shipId;
-      const newOppGrid = oppGrid.map((row, ri) =>
+      const oppUid = Object.keys(s.ready).find((u) => u !== action.uid);
+      if (!oppUid) return s;
+      const targetGrid = s.grids[oppUid];
+      if (!targetGrid) return s;
+      const { r, c } = parseKey(action.payload.target);
+      if (!targetGrid[r] || !targetGrid[r][c] || targetGrid[r][c].hit) return s;
+      const hit = !!targetGrid[r][c].shipId;
+      // Shots land on the OPPONENT's grid.
+      const newTargetGrid = targetGrid.map((row, ri) =>
         row.map((cell, ci) => (ri === r && ci === c ? { ...cell, hit: true, revealed: true } : cell))
       );
+      const grids = { ...s.grids, [oppUid]: newTargetGrid };
       let sunkId: string | null = null;
       if (hit) {
-        const shipId = newOppGrid[r][c].shipId!;
-        const shipCells = newOppGrid.flatMap((row, ri) =>
-          row.map((cell, ci) => (cell.shipId === shipId ? cellKey(ri, ci) : null))
-        ).filter((k): k is string => k !== null);
+        const shipId = newTargetGrid[r][c].shipId!;
+        const manifest = (s.ships[oppUid] ?? []).find((sh) => sh.id === shipId);
+        // Prefer the manifest's exact cell list; fall back to scanning the grid.
+        const shipCells =
+          manifest && manifest.cells.length > 0
+            ? manifest.cells
+            : newTargetGrid
+                .flatMap((row, ri) => row.map((cell, ci) => (cell.shipId === shipId ? cellKey(ri, ci) : null)))
+                .filter((k): k is string => k !== null);
         const allHit = shipCells.every((k) => {
           const { r: rr, c: cc } = parseKey(k);
-          return newOppGrid[rr][cc].hit;
+          return newTargetGrid[rr][cc].hit;
         });
         if (allHit) sunkId = shipId;
       }
-      const nextTurn = hit ? action.uid : (action.uid === u1 ? u2! : u1!);
-      const newOppShips = isU1
-        ? s.oppShips.map((ship) => (sunkId && ship.id === sunkId ? { ...ship, sunk: true } : ship))
-        : s.oppShips;
-      const newMyShips = isU1
-        ? s.myShips
-        : s.myShips.map((ship) => (sunkId && ship.id === sunkId ? { ...ship, sunk: true } : ship));
-      const winner = newOppShips.length > 0 && newOppShips.every((ship) => ship.sunk) ? action.uid : null;
+      const ships = {
+        ...s.ships,
+        [oppUid]: (s.ships[oppUid] ?? []).map((sh) => (sunkId && sh.id === sunkId ? { ...sh, sunk: true } : sh)),
+      };
+      const oppFleet = ships[oppUid]!;
+      const winner = oppFleet.length > 0 && oppFleet.every((sh) => sh.sunk) ? action.uid : null;
       return {
         ...s,
-        oppGrid: newOppGrid,
-        turn: nextTurn,
-        myGrid: isU1 ? s.myGrid : newOppGrid,
-        oppShips: newOppShips,
-        myShips: newMyShips,
+        grids,
+        ships,
+        turn: hit ? action.uid : oppUid,
         winner,
         phase: winner ? 'done' : 'playing',
       };
@@ -204,22 +184,25 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const [room, setRoom] = useState<RoomMeta | null>(null);
   const [placingGrid, setPlacingGrid] = useState<Grid>(emptyGrid());
   const [placingShips, setPlacingShips] = useState<{ id: string; size: number }[]>([]);
-  const placedShipsRef = useRef<{ id: string; cells: string[]; sunk: boolean }[]>([]);
+  const placedShipsRef = useRef<ShipManifest[]>([]);
   const [selectedShip, setSelectedShip] = useState<string | null>(null);
   const [horizontal, setHorizontal] = useState(true);
   const [hoverCell, setHoverCell] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
   useEffect(() => subscribeLive(roomCode, (s) => setL((s as FState) ?? null)), [roomCode]);
   useEffect(() => subscribeRoom(roomCode, setRoom), [roomCode]);
 
   const me = room?.players.find((p) => p.uid === uid);
   const opponent = room?.players.find((p) => p.uid !== uid);
+  const oppUid = opponent?.uid ?? '';
   const myTurn = live?.turn === uid;
   const isPlacing = live?.phase === 'placing';
+  const isHost = room?.hostId === uid;
 
   const act = (type: string, payload: any = {}) =>
     dispatchLive(roomCode, { type, uid, payload }, applyAction, () => init(room?.players.map((p) => p.uid) ?? []));
 
-  useEffect(() => {
+  const resetPlacement = () => {
     const ships: { id: string; size: number }[] = [];
     let id = 0;
     SHIPS.forEach(({ size, count }) => {
@@ -229,31 +212,39 @@ function GameScene({ roomCode }: { roomCode: string }) {
     });
     setPlacingShips(ships);
     setSelectedShip(ships[0]?.id ?? null);
-  }, []);
-
-  const canPlaceHere = (key: string) => {
-    if (!selectedShip) return false;
-    const { r, c } = parseKey(key);
-    const ship = placingShips.find((s) => s.id === selectedShip)!;
-    return canPlace(placingGrid, r, c, ship.size, horizontal);
+    setPlacingGrid(emptyGrid());
+    placedShipsRef.current = [];
+    setConfirmed(false);
   };
 
+  useEffect(() => { resetPlacement(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A rematch puts the live state back to 'placing' — re-arm this client's local placement.
+  useEffect(() => {
+    if (live?.phase === 'placing' && confirmed) resetPlacement();
+  }, [live?.phase, confirmed]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const doPlaceShip = (key: string) => {
-    if (!selectedShip) return;
+    if (!selectedShip || confirmed) return;
     const { r, c } = parseKey(key);
     const ship = placingShips.find((s) => s.id === selectedShip);
     if (!ship) return;
     if (!canPlace(placingGrid, r, c, ship.size, horizontal)) return;
     const newGrid = placeShip(placingGrid, r, c, ship.size, horizontal, ship.id);
     setPlacingGrid(newGrid);
-    placedShipsRef.current = [...placedShipsRef.current, { id: ship.id, cells: [], sunk: false }];
+    // Record exactly which cells this ship occupies so sinking can be verified later.
+    const cells = Array.from({ length: ship.size }, (_, i) =>
+      cellKey(horizontal ? r : r + i, horizontal ? c + i : c)
+    );
+    placedShipsRef.current = [...placedShipsRef.current, { id: ship.id, cells, sunk: false }];
     const remaining = placingShips.filter((s) => s.id !== selectedShip);
     setPlacingShips(remaining);
     setSelectedShip(remaining[0]?.id ?? null);
   };
 
   const confirmPlacement = () => {
-    if (placingShips.length > 0) return;
+    if (placingShips.length > 0 || confirmed) return;
+    setConfirmed(true);
     act('place', { grid: placingGrid, ships: placedShipsRef.current });
   };
 
@@ -263,39 +254,51 @@ function GameScene({ roomCode }: { roomCode: string }) {
     flashBuzzer(`#cell-${key}`, '#FB4D6D');
   };
 
+  const awardedRef = useRef(false);
   useEffect(() => {
-    if (live?.winner) {
+    if (live?.winner && !awardedRef.current) {
+      awardedRef.current = true;
       awardScores(roomCode, { [live.winner]: 300 });
     }
   }, [live?.winner]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // My board shows my own fleet (or the fleet I'm placing); the enemy board shows my shots.
+  const myFleet = live?.grids[uid] ?? emptyGrid();
+  const enemyFleet = live?.grids[oppUid] ?? emptyGrid();
+  const myShipsAfloat = (live?.ships[uid] ?? []).filter((s) => !s.sunk).length;
+  const enemyShipsAfloat = (live?.ships[oppUid] ?? []).filter((s) => !s.sunk).length;
+
   return (
-    <div className="flex h-full flex-col gap-2 lg:flex-row">
+    <div className="flex h-full flex-col gap-2">
+      <GameHeader name="Fog Duel" accent="#38BDF8" phase={isPlacing ? 'placing' : myTurn ? 'your turn' : 'opponent turn'} round={`${myShipsAfloat} vs ${enemyShipsAfloat} ships`} playerCount={room?.players.length} />
+      <div className="flex h-full flex-col gap-2 lg:flex-row">
       <div className="relative min-h-[360px] flex-1 overflow-hidden rounded-2xl border border-white/10">
         <Canvas camera={{ position: [0, 5, 7], fov: 45 }} dpr={[1, 1.75]}>
           <color attach="background" args={['#0d0d24']} />
           <ambientLight intensity={0.6} />
           <directionalLight position={[5, 8, 4]} intensity={0.8} />
           <pointLight position={[0, 4, 0]} intensity={20} distance={15} color="#38BDF8" />
+          {/* Top board: enemy waters — tap here to fire */}
           <group position={[0, 0, -3]}>
             {live && (
               <GridBoard
-                grid={live.myGrid}
-                highlight={hoverCell}
-                onCellClick={isPlacing ? doPlaceShip : fire}
-                showShips={true}
-                dimmed={!isPlacing && !myTurn}
+                grid={enemyFleet}
+                highlight={!isPlacing && myTurn ? hoverCell : null}
+                onCellClick={!isPlacing && myTurn ? fire : undefined}
+                showShips={false}
+                dimmed={!myTurn}
               />
             )}
           </group>
+          {/* Bottom board: your own fleet — never a fire target */}
           <group position={[0, 0, 3]}>
             {live && (
               <GridBoard
-                grid={live.oppGrid}
-                highlight={myTurn ? hoverCell : null}
-                onCellClick={myTurn ? fire : undefined}
-                showShips={false}
-                dimmed={!myTurn}
+                grid={isPlacing ? placingGrid : myFleet}
+                highlight={isPlacing ? hoverCell : null}
+                onCellClick={isPlacing ? doPlaceShip : undefined}
+                showShips={true}
+                dimmed={!isPlacing}
               />
             )}
           </group>
@@ -309,12 +312,14 @@ function GameScene({ roomCode }: { roomCode: string }) {
             {isPlacing ? '🚢 PLACING' : myTurn ? '🎯 YOUR TURN' : '⏳ OPPONENT TURN'}
           </span>
         </div>
+        <div className="absolute right-3 top-3 arcade-card px-2 py-0.5 text-xs font-bold text-[#FB4D6D]">🎯 Enemy waters (top)</div>
+        <div className="absolute bottom-3 right-3 arcade-card px-2 py-0.5 text-xs font-bold text-[#34D399]">🚢 Your fleet (bottom)</div>
       </div>
       <div className="flex w-full flex-col gap-2 lg:w-80">
-        {isPlacing && (
+        {isPlacing && !confirmed && (
           <div className="arcade-card flex flex-col gap-3 p-4">
             <div className="font-display text-lg font-extrabold">Place Your Fleet</div>
-            <p className="text-sm text-white/70">Tap cells to place ships. Click a placed ship to rotate. {placingShips.length} left.</p>
+            <p className="text-sm text-white/70">Tap cells on your fleet (bottom board) to place ships. {placingShips.length} left.</p>
             <div className="flex gap-1 flex-wrap">
               {placingShips.map((s) => (
                 <button
@@ -335,46 +340,52 @@ function GameScene({ roomCode }: { roomCode: string }) {
             </button>
           </div>
         )}
+        {isPlacing && confirmed && (
+          <div className="arcade-card p-4 text-center">
+            <div className="font-display text-lg font-extrabold">Fleet locked in ✅</div>
+            <p className="text-sm text-white/70">Waiting for your opponent to finish placing…</p>
+          </div>
+        )}
         {live && live.phase === 'playing' && (
           <div className="arcade-card flex flex-col gap-3 p-4">
             <div className="flex gap-2">
               <div className="flex-1 text-center">
                 <div className="text-xs font-bold uppercase tracking-widest text-white/50">{me?.name}</div>
-                <div className="font-display text-2xl font-extrabold text-[#34D399]">
-                  {live.myShips.filter((s) => !s.sunk).length} ships
-                </div>
+                <div className="font-display text-2xl font-extrabold text-[#34D399]">{myShipsAfloat} ships</div>
               </div>
               <div className="flex-1 text-center">
                 <div className="text-xs font-bold uppercase tracking-widest text-white/50">{opponent?.name}</div>
-                <div className="font-display text-2xl font-extrabold text-[#FB4D6D]">
-                  {live.oppShips.filter((s) => !s.sunk).length} ships
-                </div>
+                <div className="font-display text-2xl font-extrabold text-[#FB4D6D]">{enemyShipsAfloat} ships</div>
               </div>
             </div>
-            {myTurn && <p className="text-center text-[#34D399] font-bold">Your shot — tap enemy grid</p>}
+            {myTurn && <p className="text-center text-[#34D399] font-bold">Your shot — tap the enemy grid</p>}
             {!myTurn && <p className="text-center text-[#FB4D6D] font-bold">Waiting for opponent…</p>}
-            {live.oppShips.some((s) => s.sunk) && (
+            {(live.ships[oppUid] ?? []).some((s) => s.sunk) && (
               <p className="text-center text-[#FFC53D] font-bold animate-pulse">💥 Enemy ship sunk!</p>
             )}
           </div>
         )}
         {live?.phase === 'done' && (
-          <div className="arcade-card p-4 text-center">
+          <div className="arcade-card phase-fade relative p-4 text-center">
+            {live.winner === uid && <Confetti />}
             <div className="font-display text-xl font-extrabold text-[#FFC53D]">
               {live.winner === uid ? '🏆 YOU WIN!' : '💀 YOU LOSE'}
             </div>
             <p className="text-sm text-white/70">All enemy ships sunk.</p>
-            <button
-              onClick={async () => {
-                await setLive(roomCode, null);
-                await patchRoom(roomCode, { status: 'lobby', currentGameId: null });
-              }}
-              className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold"
-            >
-              🏠 Return to Lounge
-            </button>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {isHost && (
+                <button
+                  onClick={() => setLive(roomCode, init(room?.players.map((p) => p.uid) ?? []))}
+                  className="btn-neon rounded-xl px-4 py-2 text-sm font-bold"
+                >
+                  🔁 Rematch
+                </button>
+              )}
+              <ReturnToLounge roomCode={roomCode} />
+            </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

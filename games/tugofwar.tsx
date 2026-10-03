@@ -2,12 +2,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import type { GameModule } from './registry';
-import { awardScores, dispatchLive, getSessionUid, patchRoom, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
+import { awardScores, dispatchLive, getSessionUid, subscribeLive, subscribeRoom } from '@/lib/room-store';
 import type { Action, LiveState, RoomMeta } from '@/lib/types';
 import { flashBuzzer } from '@/lib/anime';
+import { Confetti, GameHeader, ReturnToLounge } from '@/components/GameChrome';
 
-const WIN_THRESHOLD = 1;
 const MAX_POSITION = 3;
+const TAP_LEAD_TO_WIN = 30; // absolute tap lead needed to drag the marker fully across
+const PULL_PER_TAP = MAX_POSITION / TAP_LEAD_TO_WIN;
+const ROUND_MS = 30_000;
 const ROPE_SEGMENTS = 20;
 
 interface TState extends LiveState {
@@ -17,6 +20,7 @@ interface TState extends LiveState {
   lastTap: Record<string, number>;
   winner: string | null;
   startedAt: number;
+  endsAt: number;
 }
 function init(uids: string[]): TState {
   const tapCounts: Record<string, number> = {};
@@ -29,36 +33,46 @@ function init(uids: string[]): TState {
     lastTap: {},
     winner: null,
     startedAt: 0,
+    endsAt: 0,
   };
 }
 function applyAction(state: LiveState, action: Action): LiveState {
   const s = state as TState;
   switch (action.type) {
     case 'start':
-      return { ...init(action.payload.playerUids), phase: 'playing', startedAt: Date.now() };
+      return { ...init(action.payload.playerUids), phase: 'playing', startedAt: Date.now(), endsAt: Date.now() + ROUND_MS };
+    case 'timeout': {
+      // Buzzer: the player with more taps wins, equal taps = draw.
+      if (s.phase !== 'playing' || s.winner) return s;
+      const keys = Object.keys(s.tapCounts);
+      // A winner requires real two-player competition — no solo fallback.
+      if (keys.length < 2) return { ...s, winner: null, phase: 'done' };
+      const [t1, t2] = keys;
+      const c1 = s.tapCounts[t1!] ?? 0;
+      const c2 = s.tapCounts[t2!] ?? 0;
+      const winner = c1 === c2 ? null : c1 > c2 ? t1! : t2!;
+      return { ...s, winner, phase: 'done' };
+    }
     case 'tap': {
-      if (s.phase !== 'playing') return s;
-      const now = Date.now();
+      if (s.phase !== 'playing' || s.winner) return s;
+      // Debounce on the tap's own timestamp (sender's clock) so clock skew can't reject taps.
+      const ts = typeof action.payload?.ts === 'number' ? action.payload.ts : Date.now();
       const last = s.lastTap[action.uid] ?? 0;
-      if (now - last < 30) return s; // debounce
+      if (ts - last < 30) return s; // debounce
       const tapCounts = { ...s.tapCounts, [action.uid]: (s.tapCounts[action.uid] ?? 0) + 1 };
-      const p1 = tapCounts[Object.keys(tapCounts)[0]] ?? 0;
-      const p2 = tapCounts[Object.keys(tapCounts)[1]] ?? 0;
-      const total = p1 + p2;
-      let ropePos = 0;
-      if (total > 0) {
-        ropePos = ((p1 - p2) / total) * MAX_POSITION;
-        ropePos = Math.max(-MAX_POSITION, Math.min(MAX_POSITION, ropePos));
-      }
-      let winner: string | null = null;
       const keys = Object.keys(tapCounts);
-      if (keys.length === 1) {
-        if (p1 >= 15) winner = keys[0] ?? null;
-      } else {
-        if (ropePos <= -WIN_THRESHOLD) winner = keys[0] ?? null;
-        if (ropePos >= WIN_THRESHOLD) winner = keys[1] ?? null;
+      const p1 = tapCounts[keys[0]!] ?? 0;
+      const p2 = tapCounts[keys[1]!] ?? 0;
+      // Absolute tap lead (not a ratio) — a small early advantage must not end the game.
+      const lead = p1 - p2;
+      const ropePos = Math.max(-MAX_POSITION, Math.min(MAX_POSITION, -lead * PULL_PER_TAP));
+      let winner: string | null = null;
+      if (keys.length >= 2) {
+        if (lead >= TAP_LEAD_TO_WIN) winner = keys[0]!;
+        else if (-lead >= TAP_LEAD_TO_WIN) winner = keys[1]!;
       }
-      return { ...s, ropePos, tapCounts, lastTap: { ...s.lastTap, [action.uid]: now }, winner: winner ?? null };
+      // End the round immediately when the rope crosses; otherwise the buzzer decides.
+      return { ...s, ropePos, tapCounts, lastTap: { ...s.lastTap, [action.uid]: ts }, winner, phase: winner ? 'done' : s.phase };
     }
     case 'end':
       return { ...s, phase: 'done' };
@@ -136,8 +150,10 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const [room, setRoom] = useState<RoomMeta | null>(null);
   const [localPos, setLocalPos] = useState(0);
   const [showSnap, setShowSnap] = useState(false);
+  const [now, setNow] = useState(Date.now());
   useEffect(() => subscribeLive(roomCode, (s) => setL((s as TState) ?? null)), [roomCode]);
   useEffect(() => subscribeRoom(roomCode, setRoom), [roomCode]);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 200); return () => clearInterval(t); }, []);
 
   const me = room?.players.find((p) => p.uid === uid);
   const opponent = room?.players.find((p) => p.uid !== uid);
@@ -147,26 +163,37 @@ function GameScene({ roomCode }: { roomCode: string }) {
     if (live) setLocalPos(live.ropePos);
   }, [live?.ropePos]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const isHost = room?.hostId === uid;
   const act = (type: string, payload: any = {}) =>
     dispatchLive(roomCode, { type, uid, payload }, applyAction, () => init(room?.players.map((p) => p.uid) ?? []));
 
   const onTap = () => {
     if (live?.phase !== 'playing') return;
-    act('tap');
+    act('tap', { ts: Date.now() });
     flashBuzzer('#pull-btn', isLeft ? '#FF6B35' : '#38BDF8');
   };
 
+  // Host rings the buzzer; leader at timeout wins, tie = draw.
   useEffect(() => {
-    if (live?.winner && live.winner !== uid) return;
-    if (live?.winner === uid) {
+    if (!isHost || !live) return;
+    if (live.phase === 'playing' && live.endsAt && now >= live.endsAt) act('timeout');
+  }, [isHost, live?.phase, live?.endsAt, now]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const awardedRef = useRef(false);
+  useEffect(() => {
+    if (live?.winner === uid && !awardedRef.current) {
+      awardedRef.current = true;
       awardScores(roomCode, { [uid]: 200 });
       setShowSnap(true);
       setTimeout(() => setShowSnap(false), 400);
     }
   }, [live?.winner]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const secsLeft = live?.endsAt ? Math.max(0, Math.ceil((live.endsAt - now) / 1000)) : ROUND_MS / 1000;
   return (
-    <div className="flex h-full flex-col gap-2 lg:flex-row">
+    <div className="flex h-full flex-col gap-2">
+      <GameHeader name="Tug of War" accent="#FF6B35" phase={live?.phase} round={live?.phase === 'playing' ? `${secsLeft}s` : undefined} playerCount={room?.players.length} />
+      <div className="flex h-full flex-col gap-2 lg:flex-row">
       <div className="relative min-h-[360px] flex-1 overflow-hidden rounded-2xl border border-white/10">
         <Canvas camera={{ position: [0, 2.5, 8], fov: 40 }} dpr={[1, 1.75]}>
           <color attach="background" args={['#0d0d24']} />
@@ -213,7 +240,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
         {(!live || live.phase === 'waiting') && (
           <div className="arcade-card p-4">
             <div className="font-display text-lg font-extrabold">Tug of War</div>
-            <p className="text-sm text-white/70">Rapid tap to pull the rope. First to drag the marker into your zone wins. Two players only.</p>
+            <p className="text-sm text-white/70">Rapid tap to pull the rope. 30 seconds — drag the marker into your zone or lead at the buzzer. Two players only.</p>
             <button onClick={() => act('start', { playerUids: room?.players.map((p) => p.uid) ?? [] })} className="btn-neon mt-2 w-full rounded-xl px-3 py-2 text-sm font-bold">▶ Start Pull</button>
           </div>
         )}
@@ -241,26 +268,24 @@ function GameScene({ roomCode }: { roomCode: string }) {
               </div>
             </div>
             <button id="pull-btn" onClick={onTap} className="btn-neon w-full py-4 font-display text-xl font-extrabold">💪 PULL!</button>
-            <p className="text-center text-sm text-white/60">Drag the marker past your threshold to win.</p>
+            <p className={`tnum text-center font-display text-lg font-extrabold text-[#FFC53D] ${live.endsAt && secsLeft <= 10 ? 'timer-alert rounded-xl' : ''}`}>⏱ {secsLeft}s</p>
+            <p className="text-center text-sm text-white/60">Lead by {TAP_LEAD_TO_WIN} taps to drag the marker across, or lead at the buzzer.</p>
           </div>
         )}
         {live?.phase === 'done' && (
-          <div className="arcade-card p-4 text-center">
+          <div className="arcade-card phase-fade relative p-4 text-center">
+            {live.winner === uid && <Confetti />}
             <div className="font-display text-xl font-extrabold text-[#FFC53D]">
-              {live.winner === uid ? '🏆 YOU WIN!' : '💀 YOU LOSE'}
+              {live.winner === uid ? '🏆 YOU WIN!' : live.winner ? '💀 YOU LOSE' : '🤝 DRAW!'}
             </div>
             <p className="text-sm text-white/70">Taps: {live.tapCounts[uid] ?? 0} vs {live.tapCounts[opponent?.uid ?? ''] ?? 0}</p>
-            <button
-              onClick={async () => {
-                await setLive(roomCode, null);
-                await patchRoom(roomCode, { status: 'lobby', currentGameId: null });
-              }}
-              className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold"
-            >
-              🏠 Return to Lounge
-            </button>
+            {isHost && !live.winner && (
+              <button onClick={() => act('start', { playerUids: room?.players.map((p) => p.uid) ?? [] })} className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold">🔁 Rematch</button>
+            )}
+            <ReturnToLounge roomCode={roomCode} className="mt-2" />
           </div>
         )}
+      </div>
       </div>
     </div>
   );

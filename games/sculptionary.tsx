@@ -3,9 +3,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import type { GameModule } from './registry';
-import { dispatchLive, getSessionUid, patchRoom, setLive, subscribeLive, subscribeRoom, awardScores } from '@/lib/room-store';
+import { dispatchLive, getSessionUid, subscribeLive, subscribeRoom, awardScores } from '@/lib/room-store';
 import type { Action, LiveState, RoomMeta } from '@/lib/types';
 import { flashBuzzer } from '@/lib/anime';
+import { Confetti, GameHeader, ReturnToLounge } from '@/components/GameChrome';
 
 const WORDS = ['rocket', 'crab', 'castle', 'guitar', 'mushroom', 'bridge', 'robot', 'pineapple', 'telescope', 'dragon', 'lamp', 'submarine', 'pyramid', 'bicycle', 'volcano', 'crown', 'anchor', 'tent', 'elephant', 'lighthouse'];
 const SHAPES = ['box', 'sphere', 'cone', 'cylinder'] as const;
@@ -145,7 +146,9 @@ function GameScene({ roomCode }: { roomCode: string }) {
   };
 
   return (
-    <div className="flex h-full flex-col gap-2 lg:flex-row">
+    <div className="flex h-full flex-col gap-2">
+      <GameHeader name="Sculptionary" accent="#FF6B35" phase={live?.phase} round={live?.phase === 'playing' ? `${timeLeft}s` : undefined} playerCount={room?.players.length} />
+      <div className="flex h-full flex-col gap-2 lg:flex-row">
       <div className="relative min-h-[320px] flex-1 overflow-hidden rounded-2xl border border-white/10">
         <Canvas camera={{ position: [4.5, 4, 6], fov: 50 }} dpr={[1, 1.75]}>
           <color attach="background" args={['#0d0d24']} />
@@ -156,7 +159,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
           <OrbitControls enablePan={false} maxPolarAngle={Math.PI / 2.1} />
         </Canvas>
         <div className="absolute left-3 top-3 flex gap-2">
-          <span className="arcade-card px-3 py-1 font-display text-lg font-extrabold text-[#FFC53D]">⏱ {timeLeft}s</span>
+          <span className={`arcade-card tnum px-3 py-1 font-display text-lg font-extrabold text-[#FFC53D] ${timeLeft <= 10 && live?.phase === 'playing' ? 'timer-alert' : ''}`}>⏱ {timeLeft}s</span>
           <span className="arcade-card px-3 py-1 text-sm font-semibold">🧱 {(live?.blocks || []).length}/{BLOCK_LIMIT}</span>
         </div>
         {live?.phase === 'playing' && isSculptor && (
@@ -220,22 +223,14 @@ function GameScene({ roomCode }: { roomCode: string }) {
           {(!live?.guesses?.length) && <p className="text-sm text-white/40">No guesses yet.</p>}
         </div>
         {live?.phase === 'done' && (
-          <div className="arcade-card p-4 text-center">
+          <div className="arcade-card phase-fade relative p-4 text-center">
+            {live.winnerUids.length > 0 && <Confetti />}
             <div className="font-display text-lg font-extrabold">Word was “{live.word}” 🎉</div>
             <p className="text-sm text-white/70">{live.winnerUids.length} guesser(s) scored + sculptor banked {40 * live.winnerUids.length}.</p>
-            {isHost && (
-              <button
-                onClick={async () => {
-                  await setLive(roomCode, null);
-                  await patchRoom(roomCode, { status: 'lobby', currentGameId: null });
-                }}
-                className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold"
-              >
-                🏠 Return to Lounge
-              </button>
-            )}
+            {isHost && <ReturnToLounge roomCode={roomCode} className="mt-2" />}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

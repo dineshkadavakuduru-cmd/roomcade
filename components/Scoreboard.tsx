@@ -5,7 +5,9 @@ import type { Player } from '@/lib/types';
 
 export function Scoreboard({ players, compact = false }: { players: Player[]; compact?: boolean }) {
   const refs = useRef(new Map<string, HTMLSpanElement>());
+  const prevRanks = useRef(new Map<string, number>());
   const sorted = [...players].sort((a, b) => b.score - a.score);
+  const rankByUid = new Map(sorted.map((p, i) => [p.uid, i]));
 
   useEffect(() => {
     staggerReveal('.score-row');
@@ -14,6 +16,22 @@ export function Scoreboard({ players, compact = false }: { players: Player[]; co
       if (p) countUp(el, p.score);
     });
   }, [players.map((p) => `${p.uid}:${p.score}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Snapshot ranks whenever scores settle, so the next update can show ▲▼ deltas.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      prevRanks.current = new Map(rankByUid);
+    }, 1200);
+    return () => window.clearTimeout(t);
+  }, [players.map((p) => `${p.uid}:${p.score}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const rankDelta = (uid: string, rank: number) => {
+    const prev = prevRanks.current.get(uid);
+    if (prev === undefined || prev === rank) return null;
+    return prev > rank
+      ? <span className="text-[10px] font-bold text-emerald-400">▲</span>
+      : <span className="text-[10px] font-bold text-[#FB4D6D]">▼</span>;
+  };
 
   const getRankBadge = (rank: number) => {
     if (rank === 0) return <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-yellow-400 to-amber-600 text-xs shadow-[0_0_8px_#f59e0b88]">🥇</span>;
@@ -49,9 +67,10 @@ export function Scoreboard({ players, compact = false }: { players: Player[]; co
                 }}
               />
             </div>
-            <span className={`flex-1 truncate text-sm font-bold ${i === 0 ? 'text-[#FFC53D]' : 'text-white'}`}>
+            <span className={`flex-1 truncate text-sm font-bold ${i === 0 ? 'text-[#FFC53D]' : i === 1 ? 'text-slate-200' : i === 2 ? 'text-amber-400' : 'text-white'}`}>
               {p.name}
             </span>
+            {rankDelta(p.uid, i)}
             <div className="flex items-baseline gap-1">
               <span
                 ref={(el) => {

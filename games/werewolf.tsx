@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import type { GameModule } from './registry';
 import { Avatar3D } from '@/components/Avatar3D';
-import { awardScores, dispatchLive, getSessionUid, patchRoom, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
+import { awardScores, dispatchLive, getSessionUid, subscribeLive, subscribeRoom } from '@/lib/room-store';
+import { Confetti, GameHeader, ReturnToLounge } from '@/components/GameChrome';
 import type { Action, LiveState, RoomMeta } from '@/lib/types';
 
 type Role = 'werewolf' | 'seer' | 'villager';
@@ -11,7 +12,9 @@ interface WState extends LiveState {
   phase: 'waiting' | 'night' | 'day' | 'reveal' | 'ended';
   roles: Record<string, Role>;
   alive: string[];
-  seerChecks: Record<string, Role>;
+  seerChecks: Record<string, { target: string; role: Role }>;
+  revealSource?: 'night' | 'day' | null;
+  noConsensus?: boolean;
   nightKill?: string | null;
   votes: Record<string, string>;
   eliminated?: string | null;
@@ -30,7 +33,7 @@ function dealRoles(uids: string[]): Record<string, Role> {
   return roles;
 }
 function init(uids: string[]): WState {
-  return { phase: 'waiting', roles: {}, alive: uids, seerChecks: {}, nightKill: null, votes: {}, dayNum: 0 };
+  return { phase: 'waiting', roles: {}, alive: uids, seerChecks: {}, nightKill: null, votes: {}, dayNum: 0, revealSource: null, noConsensus: false };
 }
 
 function checkWin(s: WState): string | null {
@@ -49,36 +52,44 @@ function applyAction(state: LiveState, action: Action): LiveState {
     case 'start': {
       return { ...init(action.payload.playerUids), phase: 'night', roles: action.payload.roles, dayNum: 1 };
     }
-    case 'wolf-kill':
+    case 'wolf-kill': {
+      // Wolves cannot turn on their own pack.
+      if (s.roles[action.payload.target] === 'werewolf') return s;
       return { ...s, nightKill: action.payload.target };
+    }
     case 'seer-check':
-      return { ...s, seerChecks: { ...s.seerChecks, [action.uid]: s.roles[action.payload.target]! } };
+      // Persist the checked target alongside the result so it survives dropdown changes.
+      return { ...s, seerChecks: { ...s.seerChecks, [action.uid]: { target: action.payload.target, role: s.roles[action.payload.target]! } } };
     case 'resolve-night': {
       const killed = s.nightKill;
       const alive = killed ? s.alive.filter((u) => u !== killed) : s.alive;
-      const mid: WState = { ...s, alive, eliminated: killed ?? null, eliminatedRole: killed ? s.roles[killed]! : null, phase: killed ? 'reveal' : 'day', nightKill: null, votes: {} };
+      const mid: WState = { ...s, alive, eliminated: killed ?? null, eliminatedRole: killed ? s.roles[killed]! : null, phase: killed ? 'reveal' : 'day', nightKill: null, votes: {}, revealSource: killed ? 'night' : null, noConsensus: false };
       const w = checkWin(mid);
       if (w) return { ...mid, phase: 'ended', winner: w };
       return mid;
     }
     case 'to-day':
-      return { ...s, phase: 'day', eliminated: null, eliminatedRole: null };
+      return { ...s, phase: 'day', eliminated: null, eliminatedRole: null, revealSource: null, noConsensus: false };
     case 'vote': {
       const votes = { ...s.votes, [action.uid]: action.payload.target };
       return { ...s, votes };
     }
     case 'resolve-day': {
       const tally: Record<string, number> = {};
-      Object.values(s.votes).forEach((t) => { tally[t] = (tally[t] ?? 0) + 1; });
-      const top = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+      Object.values(s.votes).forEach((t) => { if (t) tally[t] = (tally[t] ?? 0) + 1; });
+      const entries = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+      const topCount = entries[0]?.[1] ?? 0;
+      const tied = entries.filter(([, n]) => n === topCount);
+      // No consensus (tie or no votes): nobody is eliminated — go straight to night.
+      const top = tied.length === 1 ? tied[0]![0] : null;
       const alive = top ? s.alive.filter((u) => u !== top) : s.alive;
-      const mid: WState = { ...s, alive, eliminated: top, eliminatedRole: top ? s.roles[top]! : null, phase: top ? 'reveal' : 'night', votes: {}, dayNum: s.dayNum + 1 };
+      const mid: WState = { ...s, alive, eliminated: top, eliminatedRole: top ? s.roles[top]! : null, phase: top ? 'reveal' : 'night', votes: {}, dayNum: s.dayNum + 1, revealSource: top ? 'day' : null, noConsensus: !top };
       const w = checkWin(mid);
       if (w) return { ...mid, phase: 'ended', winner: w };
       return mid;
     }
     case 'to-night':
-      return { ...s, phase: 'night', eliminated: null, eliminatedRole: null };
+      return { ...s, phase: 'night', eliminated: null, eliminatedRole: null, revealSource: null };
     default:
       return s;
   }
@@ -110,6 +121,7 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const colorOf = (u: string) => room?.players.find((p) => p.uid === u)?.avatarColor ?? '#888';
 
   const wolves = Object.entries(live?.roles ?? {}).filter(([, r]) => r === 'werewolf').map(([u]) => u);
+  const mySeerCheck = live?.seerChecks?.[uid];
 
   useEffect(() => {
     if (live?.phase === 'ended' && isHost) {
@@ -127,8 +139,11 @@ function GameScene({ roomCode }: { roomCode: string }) {
   const act = (type: string, payload: any = {}) =>
     dispatchLive(roomCode, { type, uid, payload }, applyAction, () => init(room?.players.map((p) => p.uid) ?? []));
 
+  const phaseLabel = live?.phase === 'waiting' ? 'lobby' : live?.phase === 'night' ? `Night ${live.dayNum}` : live?.phase === 'day' ? `Day ${live.dayNum}` : live?.phase;
   return (
-    <div className="flex h-full flex-col gap-2 lg:flex-row">
+    <div className="flex h-full flex-col gap-2">
+      <GameHeader name="Werewolf" accent="#8B5CF6" phase={phaseLabel} playerCount={room?.players.length} />
+      <div className="flex h-full flex-col gap-2 lg:flex-row">
       <div className="relative min-h-[320px] flex-1 overflow-hidden rounded-2xl border border-white/10">
         <Canvas camera={{ position: [0, 5, 9], fov: 50 }} dpr={[1, 1.75]}>
           <color attach="background" args={[night ? '#050514' : '#141432']} />
@@ -171,13 +186,17 @@ function GameScene({ roomCode }: { roomCode: string }) {
             <div className={`rounded-xl px-3 py-2 text-sm font-bold ${alive ? 'bg-white/10' : 'bg-black/40 text-white/40'}`}>
               {alive ? <>Your role: <span className="font-display text-base">{myRole === 'werewolf' ? '🐺 Werewolf' : myRole === 'seer' ? '🔮 Seer' : '🌾 Villager'}</span></> : '☠ You are out — watch quietly.'}
             </div>
+            {live.noConsensus && <p className="mt-2 text-center text-sm font-bold text-[#FFC53D]">⚖️ No consensus — nobody was eliminated.</p>}
+            {live.phase === 'day' && (
+              <p className="mt-1 text-center text-xs text-white/50">🗳 {Object.keys(live.votes || {}).length}/{(live.alive || []).length} votes in</p>
+            )}
             {night && myRole === 'werewolf' && alive && (
               <div className="mt-2">
                 <div className="text-xs font-bold uppercase tracking-widest text-[#FF3D81]">Pack: {wolves.map(nameOf).join(', ')}</div>
                 <div className="mt-1 flex gap-1">
                   <select value={killFor} onChange={(e) => setKillFor(e.target.value)} className="min-w-0 flex-1 rounded-lg bg-black/40 px-2 py-1.5 text-sm">
                     <option value="">Kill…</option>
-                    {(live.alive || []).filter((u) => u !== uid).map((u) => <option key={u} value={u}>{nameOf(u)}</option>)}
+                    {(live.alive || []).filter((u) => u !== uid && !wolves.includes(u)).map((u) => <option key={u} value={u}>{nameOf(u)}</option>)}
                   </select>
                   <button onClick={() => killFor && act('wolf-kill', { target: killFor })} className="rounded-lg bg-[#FF3D81] px-3 py-1.5 text-sm font-bold">🐺</button>
                 </div>
@@ -192,7 +211,10 @@ function GameScene({ roomCode }: { roomCode: string }) {
                 <button onClick={() => checkFor && act('seer-check', { target: checkFor })} className="rounded-lg bg-[#8B5CF6] px-3 py-1.5 text-sm font-bold">🔮</button>
               </div>
             )}
-            {checkFor && live.seerChecks?.[uid] && <p className="mt-1 text-sm text-[#8B5CF6]">🔮 {nameOf(checkFor)} is a <b>{live.seerChecks[uid]}</b></p>}
+            {myRole === 'seer' && mySeerCheck && <p className="mt-1 text-sm text-[#8B5CF6]">🔮 {nameOf(mySeerCheck.target)} is a <b>{mySeerCheck.role}</b></p>}
+            {night && alive && myRole === 'villager' && (
+              <p className="mt-2 text-center text-sm italic text-white/60">🌌 The village sleeps… the wolves are hunting. Stay alert.</p>
+            )}
             {live.phase === 'day' && alive && (
               <div className="mt-2 flex gap-1">
                 <select value={voteFor} onChange={(e) => setVoteFor(e.target.value)} className="min-w-0 flex-1 rounded-lg bg-black/40 px-2 py-1.5 text-sm">
@@ -203,14 +225,15 @@ function GameScene({ roomCode }: { roomCode: string }) {
               </div>
             )}
             {isHost && (
-              <div className="mt-2 flex gap-1">
+              <div className="mt-2 flex flex-col gap-1">
+                {night && <p className="text-center text-xs text-white/50">{live.nightKill ? '✅ The pack has chosen' : '⏳ Waiting for the pack…'}</p>}
                 {night && <button onClick={() => act('resolve-night')} className="flex-1 rounded-xl bg-white/10 px-2 py-2 text-xs font-bold">🌅 Resolve night</button>}
                 {live.phase === 'day' && <button onClick={() => act('resolve-day')} className="flex-1 rounded-xl bg-white/10 px-2 py-2 text-xs font-bold">⚖️ Resolve vote</button>}
-                {live.phase === 'reveal' && (
-                  <>
-                    <button onClick={() => act('to-day')} className="flex-1 rounded-xl bg-white/10 px-2 py-2 text-xs font-bold">☀️ To day</button>
-                    <button onClick={() => act('to-night')} className="flex-1 rounded-xl bg-white/10 px-2 py-2 text-xs font-bold">🌙 To night</button>
-                  </>
+                {live.phase === 'reveal' && live.revealSource === 'night' && (
+                  <button onClick={() => act('to-day')} className="flex-1 rounded-xl bg-white/10 px-2 py-2 text-xs font-bold">☀️ To day</button>
+                )}
+                {live.phase === 'reveal' && live.revealSource === 'day' && (
+                  <button onClick={() => act('to-night')} className="flex-1 rounded-xl bg-white/10 px-2 py-2 text-xs font-bold">🌙 To night</button>
                 )}
               </div>
             )}
@@ -223,24 +246,16 @@ function GameScene({ roomCode }: { roomCode: string }) {
           </div>
         )}
         {live?.phase === 'ended' && (
-          <div className="arcade-card p-4 text-center">
+          <div className="arcade-card phase-fade relative p-4 text-center">
+            <Confetti />
             <div className="font-display text-xl font-extrabold">🏁 {live.winner} win the village!</div>
             <div className="mt-1 text-sm text-white/70">
               {Object.entries(live.roles || {}).map(([u, r]) => <div key={u}>{nameOf(u)} — {r}{(live.alive || []).includes(u) ? ' (survived)' : ''}</div>)}
             </div>
-            {isHost && (
-              <button
-                onClick={async () => {
-                  await setLive(roomCode, null);
-                  await patchRoom(roomCode, { status: 'lobby', currentGameId: null });
-                }}
-                className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold"
-              >
-                🏠 Return to Lounge
-              </button>
-            )}
+            {isHost && <ReturnToLounge roomCode={roomCode} className="mt-2" />}
           </div>
         )}
+      </div>
       </div>
     </div>
   );
