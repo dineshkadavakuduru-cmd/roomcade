@@ -6,6 +6,8 @@ import { GAMES, LazyGameScene } from '@/games';
 import { Scoreboard } from '@/components/Scoreboard';
 import { PortalTransition } from '@/components/PortalTransition';
 import type { RoomMeta } from '@/lib/types';
+import { AvatarIcon } from '@/components/AvatarIcons';
+import { ConnectionIndicator } from '@/components/ConnectionIndicator';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -97,7 +99,10 @@ export default function Play() {
         <div className="font-display text-lg font-extrabold" style={{ color: game?.accent ?? '#fff' }}>
           {game?.displayName ?? 'Loading game…'}
         </div>
-        <div className="room-code ml-auto text-lg font-bold text-white/60">{code}</div>
+        <div className="ml-auto flex items-center gap-3">
+          <ConnectionIndicator roomCode={code} />
+          <div className="room-code text-lg font-bold text-white/60">{code}</div>
+        </div>
       </header>
       <div className="min-h-[70vh] flex-1">
         <GameErrorBoundary key={gameId ?? 'empty'} onBackToLobby={quitToLobby}>
@@ -117,7 +122,6 @@ export default function Play() {
           {(room?.players ?? []).map((p) => {
             const isMe = p.uid === getSessionUid();
             const isThisHost = p.uid === room?.hostId;
-            const icon = p.avatarColor === '#FF6B35' ? '🦊' : p.avatarColor === '#38BDF8' ? '🤖' : p.avatarColor === '#8B5CF6' ? '👾' : p.avatarColor === '#FF3D81' ? '🐱' : p.avatarColor === '#FFC53D' ? '🐯' : '🐲';
             return (
               <div
                 key={p.uid}
@@ -133,7 +137,7 @@ export default function Play() {
                     boxShadow: `0 0 8px ${p.avatarColor}88`,
                   }}
                 >
-                  {isThisHost ? '👑' : icon}
+                  {isThisHost ? '👑' : <AvatarIcon color={p.avatarColor} size={16} />}
                 </div>
                 <span className="text-xs font-bold text-white">{p.name} {isMe && <span className="text-[10px] text-white/50">(You)</span>}</span>
                 <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[11px] font-extrabold text-[#FFC53D]">

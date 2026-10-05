@@ -5,17 +5,7 @@ import { AVATAR_COLORS } from '@/lib/types';
 import { createRoom, getSessionUid, joinRoom } from '@/lib/room-store';
 import { popIn, staggerReveal } from '@/lib/anime';
 import { useEffect } from 'react';
-
-const AVATAR_NAMES: Record<string, string> = {
-  '#FF6B35': 'Cyber Fox',
-  '#FF3D81': 'Astro Cat',
-  '#8B5CF6': 'Glitch Alien',
-  '#34D399': 'Pixel Frog',
-  '#38BDF8': 'Neon Bot',
-  '#FFC53D': 'Hyper Tiger',
-  '#F8FAFC': 'Frost Ghost',
-  '#FB4D6D': 'Blaze Wolf',
-};
+import { AvatarIcon, AVATAR_NAMES } from '@/components/AvatarIcons';
 
 export default function Landing() {
   const router = useRouter();
@@ -54,7 +44,10 @@ export default function Landing() {
       await joinRoom(c, name.trim(), color);
       router.push(`/room/${c}`);
     } catch (e: any) {
-      setErr(e.message ?? 'Could not join room.');
+      const msg = e.message ?? 'Could not join room.';
+      if (msg === 'ROOM_NOT_FOUND') setErr('Room not found. Check the code.');
+      else if (msg === 'ROOM_FULL') setErr('Room is full (8 max).');
+      else setErr(msg);
     } finally { setBusy(false); }
   };
 
@@ -121,31 +114,30 @@ export default function Landing() {
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={16} placeholder="Display name"
             className="mt-2 w-full rounded-xl bg-black/40 px-3 py-2.5 outline-none placeholder:text-white/30 focus:ring-2 focus:ring-[#FF6B35]" />
           
-          <div className="mt-3.5 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-            <div
-              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border-2 text-2xl shadow-lg transition-transform hover:scale-105"
-              style={{
-                background: `linear-gradient(135deg, ${color}, #0d0d24)`,
-                borderColor: color,
-                boxShadow: `0 0 16px ${color}88`,
-              }}
-            >
-              {color === '#FF6B35' ? '🦊' : color === '#38BDF8' ? '🤖' : color === '#8B5CF6' ? '👾' : color === '#FF3D81' ? '🐱' : color === '#FFC53D' ? '🐯' : '🐲'}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="font-display text-sm font-extrabold text-white">
-                {name.trim() || 'Player'}
+<div className="mt-3.5 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border-2 text-2xl shadow-lg transition-transform hover:scale-105"
+                style={{
+                  background: `linear-gradient(135deg, ${color}, #0d0d24)`,
+                  borderColor: color,
+                  boxShadow: `0 0 16px ${color}88`,
+                }}
+              >
+                <AvatarIcon color={color} size={28} />
               </div>
-              <div className="text-xs font-semibold" style={{ color }}>
-                {color === '#FF6B35' ? 'Cyber Fox' : color === '#38BDF8' ? 'Neon Bot' : color === '#8B5CF6' ? 'Glitch Alien' : color === '#FF3D81' ? 'Astro Cat' : color === '#FFC53D' ? 'Hyper Tiger' : 'Holo Dragon'}
+              <div className="min-w-0 flex-1">
+                <div className="font-display text-sm font-extrabold text-white">
+                  {name.trim() || 'Player'}
+                </div>
+                <div className="text-xs font-semibold" style={{ color }}>
+                  {AVATAR_NAMES[color] ?? 'Avatar'}
+                </div>
+                <div className="text-[11px] text-white/40">Ready for 3D arcade lounge</div>
               </div>
-              <div className="text-[11px] text-white/40">Ready for 3D arcade lounge</div>
             </div>
-          </div>
 
           <div className="mt-3 flex items-center justify-between gap-1.5">
             {AVATAR_COLORS.map((c) => {
-              const icon = c === '#FF6B35' ? '🦊' : c === '#38BDF8' ? '🤖' : c === '#8B5CF6' ? '👾' : c === '#FF3D81' ? '🐱' : c === '#FFC53D' ? '🐯' : '🐲';
               const isSelected = color === c;
               return (
                 <button
@@ -161,7 +153,7 @@ export default function Landing() {
                     boxShadow: isSelected ? `0 0 14px ${c}` : 'none',
                   }}
                 >
-                  <span className="drop-shadow-sm">{icon}</span>
+                  <AvatarIcon color={c} size={18} />
                   <span className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-lg bg-black/80 px-2 py-1 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
                     {AVATAR_NAMES[c] ?? 'Avatar'}
                   </span>

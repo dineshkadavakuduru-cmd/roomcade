@@ -80,8 +80,10 @@ export async function joinRoom(rawCode: string, name: string, avatarColor: strin
     const r = ref(fb.rtdb, `rooms/${code}/meta`);
     const snap = await get(r);
     const meta = normalizeRoomMeta(snap.val());
-    if (!meta) throw new Error('Room not found. Check the code.');
-    if (meta.players.length >= 8) throw new Error('Room is full (8 max).');
+    if (!meta) throw new Error('ROOM_NOT_FOUND');
+    if (meta.players.length >= 8 && !meta.players.some((p) => p.uid === uid)) {
+      throw new Error('ROOM_FULL');
+    }
     const players = meta.players.some((p) => p.uid === uid)
       ? meta.players.map((p) => (p.uid === uid ? { ...p, name, avatarColor } : p))
       : [...meta.players, { uid, name, avatarColor, score: 0 }];
@@ -91,9 +93,9 @@ export async function joinRoom(rawCode: string, name: string, avatarColor: strin
     return uid;
   }
   const meta = readLocal<RoomMeta>(LS_ROOM(code));
-  if (!meta) throw new Error('Room not found. Check the code.');
+  if (!meta) throw new Error('ROOM_NOT_FOUND');
   if (meta.players.length >= 8 && !meta.players.some((p) => p.uid === uid)) {
-    throw new Error('Room is full (8 max).');
+    throw new Error('ROOM_FULL');
   }
   const players: Player[] = meta.players.some((p) => p.uid === uid)
     ? meta.players.map((p) => (p.uid === uid ? { ...p, name, avatarColor } : p))

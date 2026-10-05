@@ -135,6 +135,13 @@ html, body {
 }
 .particle { bottom: -5vh; animation: float-up 12s linear infinite; }
 
+/* ---- Connection status pulse ---- */
+@keyframes connection-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+.connection-pulse { animation: connection-pulse 1s ease-in-out infinite; }
+
 /* ---- Pulsing logo glow ---- */
 @keyframes logo-pulse {
   0%, 100% { filter: drop-shadow(0 0 8px rgba(255,138,0,.35)); }

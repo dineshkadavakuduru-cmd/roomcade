@@ -10,6 +10,8 @@ import { Scoreboard } from '@/components/Scoreboard';
 import { RecapPodium } from '@/components/RecapPodium';
 import { PortalTransition } from '@/components/PortalTransition';
 import { popIn } from '@/lib/anime';
+import { AvatarIcon } from '@/components/AvatarIcons';
+import { ConnectionIndicator } from '@/components/ConnectionIndicator';
 
 const PreviewCanvas = ({ id }: { id: string }) => {
   const game = GAME_LIST.find((g) => g.id === id)!;
@@ -87,7 +89,9 @@ export default function Lobby() {
   }, [room?.selectedGameId]);
 
   const game = GAME_LIST[sel % GAME_LIST.length]!;
-  const eligible = room ? room.players.length >= game.minPlayers : false;
+  const playerCount = room?.players.length ?? 0;
+  const eligible = room ? playerCount >= game.minPlayers && playerCount <= game.maxPlayers : false;
+  const tooManyPlayers = room ? playerCount > game.maxPlayers : false;
 
   const selectGame = (index: number) => {
     const next = (index + GAME_LIST.length) % GAME_LIST.length;
@@ -141,7 +145,8 @@ export default function Lobby() {
           <div className="text-xs font-bold uppercase tracking-[.25em] text-white/50">Roomcade · room code</div>
           <div className="room-code font-display text-3xl font-extrabold text-[#FFC53D]">{code}</div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-3">
+          <ConnectionIndicator roomCode={code} />
           {me && <span className="arcade-card px-3 py-1.5 text-sm font-semibold">🎭 {me.name} {isHost && '· HOST'}</span>}
           <button
             onClick={copyInvite}
@@ -166,7 +171,8 @@ export default function Lobby() {
             >
               <span className="font-display font-extrabold" style={{ color: game.accent }}>{game.displayName}</span>
               <span className="text-sm text-white/60"> · {game.tagline} · {game.minPlayers}–{game.maxPlayers} players</span>
-              {!eligible && <span className="ml-1 text-xs font-bold text-[#FFC53D]">needs {game.minPlayers}+ players</span>}
+              {!eligible && tooManyPlayers && <span className="ml-1 text-xs font-bold text-[#FB4D6D]">max {game.maxPlayers} players for this game</span>}
+              {!eligible && !tooManyPlayers && <span className="ml-1 text-xs font-bold text-[#FFC53D]">needs {game.minPlayers}+ players</span>}
               {!eligible && (
                 <span className="dot-pulse ml-1 align-middle text-[#FFC53D]"><span /><span /><span /></span>
               )}
@@ -186,11 +192,13 @@ export default function Lobby() {
                 disabled={!eligible}
                 className={`btn-neon w-full px-4 py-3 font-display text-lg font-extrabold ${!eligible ? 'cursor-not-allowed opacity-50' : ''}`}
               >
-                {eligible ? `▶ Start ${game.displayName}` : `Need ${game.minPlayers}+ players to start`}
+                {eligible ? `▶ Start ${game.displayName}` : tooManyPlayers ? `Max ${game.maxPlayers} players for ${game.displayName}` : `Need ${game.minPlayers}+ players to start`}
               </button>
               {!eligible && (
                 <span className="text-center text-xs font-medium text-white/50">
-                  {room?.players.length ?? 0} in the lounge · {game.displayName} needs {game.minPlayers}+ players
+                  {tooManyPlayers
+                    ? `${room?.players.length ?? 0} in the lounge · ${game.displayName} supports max ${game.maxPlayers} players`
+                    : `${room?.players.length ?? 0} in the lounge · ${game.displayName} needs ${game.minPlayers}+ players`}
                 </span>
               )}
             </div>
@@ -198,6 +206,8 @@ export default function Lobby() {
             <div className="arcade-card p-3 text-center text-sm text-white/70">
               {eligible
                 ? `Waiting for host to start… Cartridge: ${game.displayName}`
+                : tooManyPlayers
+                ? `${game.displayName} supports max ${game.maxPlayers} players (${room?.players.length ?? 0} in lounge)`
                 : `Waiting for host… Cartridge: ${game.displayName} (${game.minPlayers} players for party)`}
             </div>
           )}
@@ -223,12 +233,13 @@ export default function Lobby() {
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-5">
           {GAME_LIST.map((g, i) => {
             const isCurrent = (sel % GAME_LIST.length) === i;
+            const tooMany = room && room.players.length > g.maxPlayers;
             return (
               <button
                 key={g.id}
                 onClick={() => selectGameById(g.id)}
                 className={`arcade-card tilt-card relative flex flex-col items-start p-3 text-left ${
-                  isCurrent ? 'ring-2 ring-white shadow-lg' : 'opacity-70 hover:opacity-100'
+                  isCurrent ? 'ring-2 ring-white shadow-lg' : tooMany ? 'opacity-50' : 'opacity-70 hover:opacity-100'
                 }`}
                 style={{
                   boxShadow: isCurrent ? `0 0 16px ${g.accent}88, inset 0 -2px 0 ${g.accent}` : `inset 0 -2px 0 ${g.accent}55`,
@@ -241,7 +252,9 @@ export default function Lobby() {
                 </div>
                 <div className="font-display mt-2 text-sm font-extrabold text-white">{g.displayName}</div>
                 <div className="line-clamp-1 text-xs text-white/60">{g.tagline}</div>
-                <div className="mt-1 text-[11px] font-semibold text-white/50">{g.minPlayers}–{g.maxPlayers} players</div>
+                <div className="mt-1 text-[11px] font-semibold" style={{ color: tooMany ? '#FB4D6D' : 'white/50' }}>
+                  {tooMany ? `⛔ Max ${g.maxPlayers} (${room?.players.length ?? 0} in room)` : `${g.minPlayers}–${g.maxPlayers} players`}
+                </div>
               </button>
             );
           })}
@@ -262,7 +275,6 @@ export default function Lobby() {
           {(room?.players ?? []).map((p) => {
             const isMe = p.uid === uid;
             const isThisHost = p.uid === room?.hostId;
-            const icon = p.avatarColor === '#FF6B35' ? '🦊' : p.avatarColor === '#38BDF8' ? '🤖' : p.avatarColor === '#8B5CF6' ? '👾' : p.avatarColor === '#FF3D81' ? '🐱' : p.avatarColor === '#FFC53D' ? '🐯' : '🐲';
             return (
               <div
                 key={p.uid}
@@ -279,7 +291,7 @@ export default function Lobby() {
                       boxShadow: `0 0 14px ${p.avatarColor}88`,
                     }}
                   >
-                    {isThisHost ? '👑' : icon}
+                    {isThisHost ? '👑' : <AvatarIcon color={p.avatarColor} size={22} />}
                   </div>
                   <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#0d0d24] bg-emerald-400" />
                 </div>
