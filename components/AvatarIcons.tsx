@@ -39,16 +39,21 @@ export const AVATAR_ICONS: Record<string, React.ReactNode> = {
   ),
   '#34D399': (
     <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="avatar-icon">
-      <ellipse cx="16" cy="20" rx="7" ry="5" fill="#34D399" />
-      <ellipse cx="16" cy="14" rx="5.5" ry="4.5" fill="#34D399" />
-      <ellipse cx="16" cy="12" rx="4" ry="3" fill="#10B981" />
-      <circle cx="13" cy="12" r="2" fill="#1C1C38" />
-      <circle cx="19" cy="12" r="2" fill="#1C1C38" />
-      <circle cx="13" cy="11" r="0.7" fill="#FFF" />
-      <circle cx="19" cy="11" r="0.7" fill="#FFF" />
-      <ellipse cx="16" cy="17" rx="2.5" ry="1.5" fill="#10B981" />
-      <path d="M11 18 Q16 20 21 18" stroke="#FFC53D" stroke-width="2" fill="none" stroke-linecap="round" />
-      <circle cx="16" cy="19" r="0.5" fill="#FFC53D" />
+      {/* Pixel Frog: wide grin + bulging eyes on top of the head */}
+      <ellipse cx="16" cy="21" rx="8" ry="6" fill="#34D399" />
+      <ellipse cx="16" cy="15" rx="8" ry="6.5" fill="#34D399" />
+      <ellipse cx="16" cy="23.5" rx="4.6" ry="3" fill="#6EE7B7" opacity="0.55" />
+      <circle cx="10.6" cy="10.4" r="3.3" fill="#34D399" />
+      <circle cx="21.4" cy="10.4" r="3.3" fill="#34D399" />
+      <circle cx="10.6" cy="10.4" r="2.3" fill="#F8FAFC" />
+      <circle cx="21.4" cy="10.4" r="2.3" fill="#F8FAFC" />
+      <circle cx="10.6" cy="10.6" r="1.2" fill="#1C1C38" />
+      <circle cx="21.4" cy="10.6" r="1.2" fill="#1C1C38" />
+      <circle cx="10.2" cy="9.9" r="0.45" fill="#FFF" />
+      <circle cx="21" cy="9.9" r="0.45" fill="#FFF" />
+      <path d="M9 15.5 Q16 21.5 23 15.5" stroke="#10B981" stroke-width="1.8" fill="none" stroke-linecap="round" />
+      <circle cx="13.8" cy="13" r="0.6" fill="#10B981" />
+      <circle cx="18.2" cy="13" r="0.6" fill="#10B981" />
     </svg>
   ),
   '#38BDF8': (
@@ -79,30 +84,34 @@ export const AVATAR_ICONS: Record<string, React.ReactNode> = {
   ),
   '#F8FAFC': (
     <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="avatar-icon">
-      <ellipse cx="16" cy="20" rx="7" ry="5.5" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1" />
-      <ellipse cx="16" cy="14" rx="5" ry="4" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1" />
-      <ellipse cx="16" cy="11" rx="3.5" ry="2.5" fill="#E2E8F0" />
-      <ellipse cx="9" cy="13" rx="2" ry="1.2" fill="#F8FAFC" transform="rotate(-20 9 13)" stroke="#94A3B8" stroke-width="0.5" />
-      <ellipse cx="23" cy="13" rx="2" ry="1.2" fill="#F8FAFC" transform="rotate(20 23 13)" stroke="#94A3B8" stroke-width="0.5" />
-      <circle cx="14" cy="12" r="1.3" fill="#475569" />
-      <circle cx="19" cy="12" r="1.3" fill="#475569" />
-      <circle cx="14" cy="11" r="0.5" fill="#FFF" opacity="0.6" />
-      <circle cx="19" cy="11" r="0.5" fill="#FFF" opacity="0.6" />
-      <ellipse cx="16" cy="16" rx="1.5" ry="0.8" fill="#64748B" />
-      <path d="M11 18 Q16 20 21 18" stroke="#64748B" stroke-width="1.5" fill="none" stroke-linecap="round" />
+      {/* Frost Ghost: domed sheet with a wavy spectral hem — no ears or legs */}
+      <path d="M6 27 V15 a10 10 0 0 1 20 0 V27 l-3.3 -2.7 -3.4 2.7 -3.3 -2.7 -3.4 2.7 -3.3 -2.7 Z" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1" stroke-linejoin="round" />
+      <ellipse cx="12" cy="15.5" rx="2.2" ry="2.9" fill="#1C1C38" />
+      <ellipse cx="20" cy="15.5" rx="2.2" ry="2.9" fill="#1C1C38" />
+      <circle cx="11.3" cy="14.5" r="0.7" fill="#FFF" opacity="0.75" />
+      <circle cx="19.3" cy="14.5" r="0.7" fill="#FFF" opacity="0.75" />
+      <ellipse cx="16" cy="20.6" rx="1.5" ry="2.1" fill="#94A3B8" opacity="0.65" />
+      <circle cx="8.4" cy="19.5" r="1.3" fill="#BAE6FD" opacity="0.5" />
+      <circle cx="23.6" cy="19.5" r="1.3" fill="#BAE6FD" opacity="0.5" />
+      <path d="M3.4 10.6 l1.4 1.4 M27.2 21.4 l1.4 1.4 M16 2.6 l0 1.8" stroke="#BAE6FD" stroke-width="1.1" stroke-linecap="round" opacity="0.85" />
     </svg>
   ),
   '#FB4D6D': (
     <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="avatar-icon">
-      <ellipse cx="16" cy="20" rx="7" ry="5" fill="#FB4D6D" />
-      <ellipse cx="16" cy="14" rx="5" ry="4" fill="#FB4D6D" />
-      <path d="M9 11 Q11 5 16 7 Q21 5 23 11" fill="#FB4D6D" />
-      <path d="M16 11 Q16 5 16 7" stroke="#FFC53D" stroke-width="2" fill="none" />
-      <circle cx="14" cy="12" r="1.3" fill="#1C1C38" />
-      <circle cx="19" cy="12" r="1.3" fill="#1C1C38" />
-      <ellipse cx="16" cy="15.5" rx="1.5" ry="0.8" fill="#FFC53D" />
-      <path d="M13 17 Q16 20 19 17" stroke="#FFC53D" stroke-width="1.5" fill="none" stroke-linecap="round" />
-      <ellipse cx="16" cy="19" rx="2.5" ry="1" fill="#FF6B35" opacity="0.5" />
+      {/* Blaze Wolf: pointed ears, long muzzle, bared fangs */}
+      <path d="M5 12 L7.4 3 L12 8.6 Z" fill="#FB4D6D" />
+      <path d="M27 12 L24.6 3 L20 8.6 Z" fill="#FB4D6D" />
+      <path d="M7.1 10.2 L8.5 5.4 L10.7 8.7 Z" fill="#FF6B35" />
+      <path d="M24.9 10.2 L23.5 5.4 L21.3 8.7 Z" fill="#FF6B35" />
+      <ellipse cx="16" cy="15" rx="9" ry="8" fill="#FB4D6D" />
+      <ellipse cx="16" cy="20.5" rx="4.6" ry="4" fill="#FF8FA3" />
+      <ellipse cx="12.5" cy="14" rx="1.7" ry="1.5" fill="#1C1C38" />
+      <ellipse cx="19.5" cy="14" rx="1.7" ry="1.5" fill="#1C1C38" />
+      <path d="M10 11.6 L13.4 13" stroke="#B91C3C" stroke-width="1.1" stroke-linecap="round" />
+      <path d="M22 11.6 L18.6 13" stroke="#B91C3C" stroke-width="1.1" stroke-linecap="round" />
+      <path d="M13.4 19 Q16 17.8 18.6 19 Q16 21 13.4 19 Z" fill="#1C1C38" />
+      <path d="M14.2 22 L15 24 L15.8 22 Z" fill="#FFF6E9" />
+      <path d="M16.2 22 L17 24 L17.8 22 Z" fill="#FFF6E9" />
     </svg>
   ),
 };
