@@ -177,6 +177,7 @@ export default function Lobby() {
             <button onClick={() => selectGame(sel - 1)} aria-label="Previous game" className="arcade-card flex h-11 w-11 items-center justify-center font-bold hover:bg-white/20">‹</button>
             <div
               className="arcade-card lobby-pop flex-1 cursor-pointer px-3 py-2 text-center ring-2 ring-white/25"
+              data-active-game={game.id}
               onClick={() => selectGame(sel + 1)}
               role="button"
             >
@@ -248,6 +249,7 @@ export default function Lobby() {
             return (
               <button
                 key={g.id}
+                data-game-cartridge={g.id}
                 onClick={() => selectGameById(g.id)}
                 className={`arcade-card tilt-card relative flex flex-col items-start p-3 text-left ${
                   isCurrent ? 'ring-2 ring-white shadow-lg' : tooMany ? 'opacity-50' : 'opacity-70 hover:opacity-100'

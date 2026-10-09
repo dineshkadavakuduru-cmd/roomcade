@@ -158,6 +158,20 @@ html, body {
 }
 .avatar-bounce { animation: avatar-bounce .4s ease-out; }
 
+/* ---- Avatar icons: one deterministic size, everywhere ---- */
+.avatar-icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  line-height: 0;
+}
+.avatar-icon-wrapper > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .font-display {
   font-family: "Baloo 2", "Nunito", system-ui, sans-serif;
   letter-spacing: -0.02em;

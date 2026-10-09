@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
 import type { GameModule } from './registry';
 import { awardScores, dispatchLive, getSessionUid, setLive, subscribeLive, subscribeRoom } from '@/lib/room-store';
 import type { Action, LiveState, RoomMeta } from '@/lib/types';
@@ -136,8 +137,9 @@ function applyAction(state: LiveState, action: Action): LiveState {
   }
 }
 
-function GridBoard({ grid, highlight, onCellClick, showShips, dimmed }: {
+function GridBoard({ grid, highlight, onCellClick, showShips, dimmed, board }: {
   grid: Grid; highlight: string | null; onCellClick?: (key: string) => void; showShips: boolean; dimmed?: boolean;
+  board: 'enemy' | 'own';
 }) {
   return (
     <group>
@@ -157,20 +159,39 @@ function GridBoard({ grid, highlight, onCellClick, showShips, dimmed }: {
           const emissive = isHit && cell.shipId ? '#FB4D6D' : isHighlight ? '#FFC53D' : '#000';
           const emissiveIntensity = isHighlight ? 1.5 : isHit && cell.shipId ? 1 : 0;
           return (
-            <mesh
-              key={key}
-              position={[c - (GRID_SIZE - 1) / 2, 0, r - (GRID_SIZE - 1) / 2]}
-              onClick={() => onCellClick?.(key)}
-            >
-              <boxGeometry args={[0.85, 0.15, 0.85]} />
-              <meshStandardMaterial
-                color={color}
-                emissive={emissive}
-                emissiveIntensity={emissiveIntensity}
-                roughness={isHit ? 0.3 : 0.7}
-                metalness={isHit ? 0.5 : 0}
-              />
-            </mesh>
+            <group key={key} position={[c - (GRID_SIZE - 1) / 2, 0, r - (GRID_SIZE - 1) / 2]}>
+              <mesh onClick={() => onCellClick?.(key)}>
+                <boxGeometry args={[0.85, 0.15, 0.85]} />
+                <meshStandardMaterial
+                  color={color}
+                  emissive={emissive}
+                  emissiveIntensity={emissiveIntensity}
+                  roughness={isHit ? 0.3 : 0.7}
+                  metalness={isHit ? 0.5 : 0}
+                />
+              </mesh>
+              {/* Transparent DOM hit target pinned to the cell's projected screen
+                  position: keeps 3D raycasting working AND makes every cell a
+                  real, focusable button for touch + automation. */}
+              <Html position={[0, 0.14, 0]} center zIndexRange={[40, 0]}>
+                <button
+                  type="button"
+                  data-fog-cell={key}
+                  data-fog-board={board}
+                  aria-label={`${board === 'enemy' ? 'Fire at' : 'Place ship at'} ${key}`}
+                  onClick={() => onCellClick?.(key)}
+                  style={{
+                    width: 34,
+                    height: 22,
+                    padding: 0,
+                    border: 'none',
+                    background: 'transparent',
+                    opacity: 0,
+                    cursor: onCellClick ? 'pointer' : 'default',
+                  }}
+                />
+              </Html>
+            </group>
           );
         })
       )}
@@ -192,11 +213,19 @@ function GameScene({ roomCode }: { roomCode: string }) {
   useEffect(() => subscribeLive(roomCode, (s) => setL((s as FState) ?? null)), [roomCode]);
   useEffect(() => subscribeRoom(roomCode, setRoom), [roomCode]);
 
+  // When the room enters 'in-game', the lobby's startGame clears the live state.
+  // Initialize the placing phase so the fleet panel renders immediately.
+  useEffect(() => {
+    if (!live && room?.status === 'in-game' && room?.players?.length >= 2) {
+      setLive(roomCode, init(room.players.map((p) => p.uid)));
+    }
+  }, [live, room?.status, room?.players?.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const me = room?.players.find((p) => p.uid === uid);
   const opponent = room?.players.find((p) => p.uid !== uid);
   const oppUid = opponent?.uid ?? '';
   const myTurn = live?.turn === uid;
-  const isPlacing = live?.phase === 'placing';
+  const isPlacing = !live || live?.phase === 'placing';
   const isHost = room?.hostId === uid;
 
   const act = (type: string, payload: any = {}) =>
@@ -281,25 +310,29 @@ function GameScene({ roomCode }: { roomCode: string }) {
           {/* Top board: enemy waters — tap here to fire */}
           <group position={[0, 0, -3]}>
             {live && (
-              <GridBoard
-                grid={enemyFleet}
-                highlight={!isPlacing && myTurn ? hoverCell : null}
-                onCellClick={!isPlacing && myTurn ? fire : undefined}
-                showShips={false}
-                dimmed={!myTurn}
-              />
+                <GridBoard
+                  grid={enemyFleet}
+                  highlight={!isPlacing && myTurn ? hoverCell : null}
+                  onCellClick={!isPlacing && myTurn ? fire : undefined}
+                  showShips={false}
+                  dimmed={!myTurn}
+                  board="enemy"
+                />
+
             )}
           </group>
           {/* Bottom board: your own fleet — never a fire target */}
           <group position={[0, 0, 3]}>
             {live && (
-              <GridBoard
-                grid={isPlacing ? placingGrid : myFleet}
-                highlight={isPlacing ? hoverCell : null}
-                onCellClick={isPlacing ? doPlaceShip : undefined}
-                showShips={true}
-                dimmed={!isPlacing}
-              />
+                <GridBoard
+                  grid={isPlacing ? placingGrid : myFleet}
+                  highlight={isPlacing ? hoverCell : null}
+                  onCellClick={isPlacing ? doPlaceShip : undefined}
+                  showShips={true}
+                  dimmed={!isPlacing}
+                  board="own"
+                />
+
             )}
           </group>
           <mesh position={[0, 0.5, 0]} rotation={[Math.PI / 2, 0, 0]}>

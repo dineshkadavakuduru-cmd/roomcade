@@ -2,6 +2,8 @@
 import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Html } from '@react-three/drei';
+import { resolveAvatar } from '@/lib/avatars';
+import { AvatarIcon } from './AvatarIcons';
 
 export function Avatar3D({
   color,
@@ -22,6 +24,12 @@ export function Avatar3D({
   const coreRef = useRef<any>(null);
   const seed = useRef(Math.random() * Math.PI * 2);
 
+  // Identity is resolved through the authoritative registry, so the 3D body
+  // always carries the player's real species + canonical color (never a
+  // mismatched color from legacy room state).
+  const avatar = resolveAvatar(color);
+  const activeColor = dimmed ? '#3a3a5c' : avatar.color;
+
   useFrame(({ clock }) => {
     const t = clock.getElapsedTime() + seed.current;
     if (group.current) {
@@ -32,8 +40,6 @@ export function Avatar3D({
       coreRef.current.material.emissiveIntensity = 0.8 + Math.sin(t * 4) * 0.4;
     }
   });
-
-  const activeColor = dimmed ? '#3a3a5c' : color;
 
   return (
     <group position={position}>
@@ -138,15 +144,20 @@ export function Avatar3D({
               }}
             >
               <span
+                data-avatar-3d
+                data-avatar-id={avatar.id}
+                data-avatar-species={avatar.species}
                 style={{
-                  display: 'inline-block',
-                  width: 6,
-                  height: 6,
-                  borderRadius: 999,
-                  background: activeColor,
-                  boxShadow: `0 0 6px ${activeColor}`,
+                  display: 'inline-flex',
+                  width: 16,
+                  height: 16,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
                 }}
-              />
+              >
+                <AvatarIcon color={color} size={16} />
+              </span>
               {name}
             </div>
           </Html>
