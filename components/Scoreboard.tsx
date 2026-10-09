@@ -2,6 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { countUp, staggerReveal } from '@/lib/anime';
 import type { Player } from '@/lib/types';
+import { AvatarIcon } from '@/components/AvatarIcons';
 
 export function Scoreboard({ players, compact = false }: { players: Player[]; compact?: boolean }) {
   const refs = useRef(new Map<string, HTMLSpanElement>());
@@ -57,15 +58,16 @@ export function Scoreboard({ players, compact = false }: { players: Player[]; co
             }`}
           >
             {getRankBadge(i)}
-            <div className="relative">
-              <span
-                className="block h-6 w-6 rounded-full border-2 shadow-sm"
-                style={{
-                  background: p.avatarColor,
-                  borderColor: i === 0 ? '#FFC53D' : p.avatarColor,
-                  boxShadow: `0 0 10px ${p.avatarColor}77`,
-                }}
-              />
+            <div
+              data-scoreboard-avatar={p.uid}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 shadow-sm"
+              style={{
+                background: p.avatarColor,
+                borderColor: i === 0 ? '#FFC53D' : p.avatarColor,
+                boxShadow: `0 0 10px ${p.avatarColor}77`,
+              }}
+            >
+              <AvatarIcon color={p.avatarId ?? p.avatarColor} size={20} />
             </div>
             <span className={`flex-1 truncate text-sm font-bold ${i === 0 ? 'text-[#FFC53D]' : i === 1 ? 'text-slate-200' : i === 2 ? 'text-amber-400' : 'text-white'}`}>
               {p.name}

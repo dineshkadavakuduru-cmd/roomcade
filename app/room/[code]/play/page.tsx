@@ -129,16 +129,24 @@ export default function Play() {
                   isMe ? 'border-white/30 bg-white/10' : 'border-white/10 bg-white/5'
                 }`}
               >
-                <div
-                  className="flex h-7 w-7 items-center justify-center rounded-full border text-xs shadow-sm"
-                  style={{
-                    background: p.avatarColor,
-                    borderColor: p.avatarColor,
-                    boxShadow: `0 0 8px ${p.avatarColor}88`,
-                  }}
-                >
-                  {isThisHost ? '👑' : <AvatarIcon color={p.avatarColor} size={16} />}
-                </div>
+                <span className="relative flex items-center">
+                  <span
+                    data-player-avatar={p.uid}
+                    className="flex h-7 w-7 items-center justify-center rounded-full border text-xs shadow-sm"
+                    style={{
+                      background: p.avatarColor,
+                      borderColor: p.avatarColor,
+                      boxShadow: `0 0 8px ${p.avatarColor}88`,
+                    }}
+                  >
+                    <AvatarIcon color={p.avatarId ?? p.avatarColor} size={16} />
+                  </span>
+                  {isThisHost && (
+                    <span className="absolute -right-1.5 -top-1.5 text-[10px] leading-none" title="Host" aria-label="Host">
+                      👑
+                    </span>
+                  )}
+                </span>
                 <span className="text-xs font-bold text-white">{p.name} {isMe && <span className="text-[10px] text-white/50">(You)</span>}</span>
                 <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[11px] font-extrabold text-[#FFC53D]">
                   {p.score}

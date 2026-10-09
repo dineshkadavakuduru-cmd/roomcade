@@ -3,7 +3,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Canvas } from '@react-three/fiber';
 import { AVATAR_COLORS, type RoomMeta } from '@/lib/types';
-import { getSessionUid, joinRoom, patchRoom, setLive, subscribeRoom } from '@/lib/room-store';
+import { getSessionUid, joinRoom, leaveRoom, patchRoom, setLive, subscribeRoom } from '@/lib/room-store';
 import { GAME_LIST } from '@/games';
 import { LobbyScene } from '@/components/LobbyScene';
 import { Scoreboard } from '@/components/Scoreboard';
@@ -47,8 +47,8 @@ export default function Lobby() {
     setMissing(!m);
     if (m && !m.players.some((p) => p.uid === getSessionUid())) {
       const n = sessionStorage.getItem('roomcade:name') || `Guest-${getSessionUid().slice(2, 6)}`;
-      const c = sessionStorage.getItem('roomcade:color') || AVATAR_COLORS[2]!;
-      joinRoom(code, n, c).catch(() => {});
+      const savedAvatar = sessionStorage.getItem('roomcade:avatarId') || sessionStorage.getItem('roomcade:color') || AVATAR_COLORS[2]!;
+      joinRoom(code, n, savedAvatar).catch(() => {});
     }
   }), [code]);
 
@@ -147,12 +147,23 @@ export default function Lobby() {
         </div>
         <div className="ml-auto flex items-center gap-3">
           <ConnectionIndicator roomCode={code} />
-          {me && <span className="arcade-card px-3 py-1.5 text-sm font-semibold">🎭 {me.name} {isHost && '· HOST'}</span>}
+          {me && (
+            <span className="arcade-card flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold">
+              <AvatarIcon color={me.avatarId ?? me.avatarColor} size={18} />
+              {me.name} {isHost && '· HOST'}
+            </span>
+          )}
           <button
             onClick={copyInvite}
             className={`rounded-xl px-3 py-1.5 text-sm font-bold transition-all ${copied ? 'bg-[#34D399]/30 text-[#34D399] ring-1 ring-[#34D399]' : 'bg-white/10 hover:bg-white/20'}`}
           >
             {copied ? '✓ Copied!' : 'Copy invite link'}
+          </button>
+          <button
+            onClick={async () => { await leaveRoom(code); router.push('/'); }}
+            className="rounded-xl bg-white/5 px-3 py-1.5 text-sm font-bold text-white/70 hover:bg-white/15"
+          >
+            Leave
           </button>
         </div>
       </header>
@@ -284,6 +295,7 @@ export default function Lobby() {
               >
                 <div className="relative">
                   <div
+                    data-player-avatar={p.uid}
                     className="flex h-11 w-11 items-center justify-center rounded-full border-2 text-xl shadow-md transition-transform hover:scale-110"
                     style={{
                       background: `linear-gradient(135deg, ${p.avatarColor}, #0d0d24)`,
@@ -291,8 +303,17 @@ export default function Lobby() {
                       boxShadow: `0 0 14px ${p.avatarColor}88`,
                     }}
                   >
-                    {isThisHost ? '👑' : <AvatarIcon color={p.avatarColor} size={22} />}
+                    <AvatarIcon color={p.avatarId ?? p.avatarColor} size={22} />
                   </div>
+                  {isThisHost && (
+                    <span
+                      className="absolute -right-1 -top-1 text-sm leading-none drop-shadow"
+                      title="Host"
+                      aria-label="Host"
+                    >
+                      👑
+                    </span>
+                  )}
                   <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#0d0d24] bg-emerald-400" />
                 </div>
                 <div className="w-full truncate text-xs font-extrabold text-white">

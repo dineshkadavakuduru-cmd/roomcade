@@ -1,16 +1,18 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AVATAR_COLORS } from '@/lib/types';
+import { AVATARS, AVATAR_NAMES, DEFAULT_AVATAR_ID, avatarIdFor, resolveAvatar } from '@/lib/types';
 import { createRoom, getSessionUid, joinRoom } from '@/lib/room-store';
 import { popIn, staggerReveal } from '@/lib/anime';
 import { useEffect } from 'react';
-import { AvatarIcon, AVATAR_NAMES } from '@/components/AvatarIcons';
+import { AvatarIcon } from '@/components/AvatarIcons';
 
 export default function Landing() {
   const router = useRouter();
   const [name, setName] = useState('');
-  const [color, setColor] = useState(AVATAR_COLORS[0]!);
+  const [avatarId, setAvatarId] = useState<string>(DEFAULT_AVATAR_ID);
+  const avatar = resolveAvatar(avatarId);
+  const color = avatar.color;
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -18,7 +20,7 @@ export default function Landing() {
 
   useEffect(() => {
     setName(sessionStorage.getItem('roomcade:name') ?? '');
-    setColor(sessionStorage.getItem('roomcade:color') ?? AVATAR_COLORS[0]!);
+    setAvatarId(avatarIdFor(sessionStorage.getItem('roomcade:avatarId') ?? sessionStorage.getItem('roomcade:color')));
     popIn('.landing-hero');
     staggerReveal('.landing-card');
   }, []);
@@ -137,25 +139,28 @@ export default function Landing() {
             </div>
 
           <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
-            {AVATAR_COLORS.map((c) => {
-              const isSelected = color === c;
+            {AVATARS.map((a) => {
+              const isSelected = avatarId === a.id;
               return (
                 <button
-                  key={c}
-                  onClick={() => setColor(c)}
-                  aria-label={AVATAR_NAMES[c] ?? c}
+                  key={a.id}
+                  data-avatar-option={a.id}
+                  data-avatar-species={a.species}
+                  onClick={() => setAvatarId(a.id)}
+                  aria-label={a.name}
+                  aria-pressed={isSelected}
                   className={`group relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 text-base transition-all hover:scale-110 ${
                     isSelected ? 'ring-2 ring-white scale-110 avatar-bounce' : 'opacity-70 hover:opacity-100'
                   }`}
                   style={{
-                    background: c,
+                    background: a.color,
                     borderColor: isSelected ? '#fff' : 'transparent',
-                    boxShadow: isSelected ? `0 0 14px ${c}` : 'none',
+                    boxShadow: isSelected ? `0 0 14px ${a.color}` : 'none',
                   }}
                 >
-                  <AvatarIcon color={c} size={18} />
+                  <AvatarIcon color={a.id} size={18} />
                   <span className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-lg bg-black/80 px-2 py-1 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
-                    {AVATAR_NAMES[c] ?? 'Avatar'}
+                    {a.name}
                   </span>
                 </button>
               );

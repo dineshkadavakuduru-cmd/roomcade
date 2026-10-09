@@ -6,7 +6,7 @@
  * BroadcastChannel) so two tabs on one machine can complete the full
  * create → join → play flow with zero setup.
  */
-import { generateCode, normalizeCode, type Action, type LiveState, type Player, type RoomMeta } from './types';
+import { avatarFields, generateCode, normalizeCode, type Action, type LiveState, type Player, type RoomMeta } from './types';
 import { firebaseConfigured, getFirebase } from './firebase';
 import { get, onDisconnect, onValue, ref, remove, set, update, type Database, type Unsubscribe } from 'firebase/database';
 
@@ -28,6 +28,27 @@ function writeLocal(key: string, value: unknown, bcName?: string) {
   if (bcName && typeof BroadcastChannel !== 'undefined') {
     new BroadcastChannel(bcName).postMessage({ key, at: Date.now() });
   }
+}
+
+// Persist the chosen avatar under both its stable id and canonical color so a
+// refresh / rejoin always rehydrates the exact same species.
+function rememberIdentity(name: string, av: { avatarId: string; avatarColor: string }) {
+  sessionStorage.setItem('roomcade:name', name);
+  sessionStorage.setItem('roomcade:color', av.avatarColor);
+  sessionStorage.setItem('roomcade:avatarId', av.avatarId);
+}
+
+// Heal legacy room state on read: fill in a stable avatarId from the stored color
+// and snap the color back to the registry so unknown values never render another
+// species. Deterministic: same input always yields the same serialized player.
+function normalizePlayer(p: any): Player {
+  const av = avatarFields(p?.avatarColor ?? p?.avatarId);
+  return {
+    uid: String(p?.uid ?? ''),
+    name: String(p?.name ?? ''),
+    ...av,
+    score: Number(p?.score) || 0,
+  };
 }
 
 export function getSessionUid(): string {
@@ -55,7 +76,8 @@ export async function createRoom(name: string, avatarColor: string, initialGameI
   const uid = getSessionUid();
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateCode(5);
-    const me: Player = { uid, name: name || 'Host', avatarColor, score: 0 };
+    const av = avatarFields(avatarColor);
+    const me: Player = { uid, name: name || 'Host', ...av, score: 0 };
     const meta: RoomMeta = {
       code,
       hostId: uid,
@@ -74,14 +96,12 @@ export async function createRoom(name: string, avatarColor: string, initialGameI
       // Players are stored keyed by uid so presence cleanup targets exactly one node.
       await set(r, { ...meta, players: { [uid]: me } });
       await registerPresence(fb.rtdb, code, uid);
-      sessionStorage.setItem('roomcade:name', name);
-      sessionStorage.setItem('roomcade:color', avatarColor);
+      rememberIdentity(name, av);
       return { code, uid };
     }
     if (readLocal<RoomMeta>(LS_ROOM(code))) continue;
     writeLocal(LS_ROOM(code), meta, BC(code));
-    sessionStorage.setItem('roomcade:name', name);
-    sessionStorage.setItem('roomcade:color', avatarColor);
+    rememberIdentity(name, av);
     return { code, uid };
   }
   throw new Error('Could not allocate a room code, try again.');
@@ -100,14 +120,14 @@ export async function joinRoom(rawCode: string, name: string, avatarColor: strin
       throw new Error('ROOM_FULL');
     }
     const existing = meta.players.find((p) => p.uid === uid);
+    const av = avatarFields(avatarColor);
     const player: Player = existing
-      ? { ...existing, name, avatarColor }
-      : { uid, name: name || `Guest-${uid.slice(2, 6)}`, avatarColor, score: 0 };
+      ? { ...existing, name, ...av }
+      : { uid, name: name || `Guest-${uid.slice(2, 6)}`, ...av, score: 0 };
     await set(ref(fb.rtdb, `rooms/${code}/meta/players/${uid}`), player);
     await update(r, { updatedAt: Date.now() });
     await registerPresence(fb.rtdb, code, uid);
-    sessionStorage.setItem('roomcade:name', name);
-    sessionStorage.setItem('roomcade:color', avatarColor);
+    rememberIdentity(name, av);
     return uid;
   }
   const meta = readLocal<RoomMeta>(LS_ROOM(code));
@@ -115,13 +135,46 @@ export async function joinRoom(rawCode: string, name: string, avatarColor: strin
   if (meta.players.length >= 8 && !meta.players.some((p) => p.uid === uid)) {
     throw new Error('ROOM_FULL');
   }
+  const av = avatarFields(avatarColor);
   const players: Player[] = meta.players.some((p) => p.uid === uid)
-    ? meta.players.map((p) => (p.uid === uid ? { ...p, name, avatarColor } : p))
-    : [...meta.players, { uid, name: name || `Guest-${uid.slice(2, 6)}`, avatarColor, score: 0 }];
+    ? meta.players.map((p) => (p.uid === uid ? { ...p, name, ...av } : p))
+    : [...meta.players, { uid, name: name || `Guest-${uid.slice(2, 6)}`, ...av, score: 0 }];
   writeLocal(LS_ROOM(code), { ...meta, players, updatedAt: Date.now() }, BC(code));
-  sessionStorage.setItem('roomcade:name', name);
-  sessionStorage.setItem('roomcade:color', avatarColor);
+  rememberIdentity(name, av);
   return uid;
+}
+
+// Explicit leave (page hide / back home). Removes this player's presence node and,
+// when the room is now empty, deletes the whole room + its live game state so a
+// finished night never leaks a stale room code. onDisconnect() covers hard drops.
+export async function leaveRoom(rawCode: string): Promise<void> {
+  const code = normalizeCode(rawCode);
+  const uid = getSessionUid();
+  if (firebaseConfigured()) {
+    const fb = getFirebase()!;
+    try {
+      await remove(ref(fb.rtdb, `rooms/${code}/meta/players/${uid}`));
+      const r = ref(fb.rtdb, `rooms/${code}/meta`);
+      const snap = await get(r);
+      const meta = normalizeRoomMeta(snap.val());
+      if (!meta || meta.players.length === 0) {
+        await remove(ref(fb.rtdb, `rooms/${code}`));
+      }
+    } catch {
+      // Best-effort: never block navigation on cleanup.
+    }
+    return;
+  }
+  const meta = readLocal<RoomMeta>(LS_ROOM(code));
+  if (!meta) return;
+  const players = meta.players.filter((p) => p.uid !== uid);
+  if (players.length === 0) {
+    localStorage.removeItem(LS_ROOM(code));
+    localStorage.removeItem(LS_LIVE(code));
+    if (typeof BroadcastChannel !== 'undefined') new BroadcastChannel(BC(code)).postMessage({ key: LS_ROOM(code), at: Date.now() });
+    return;
+  }
+  writeLocal(LS_ROOM(code), { ...meta, players, updatedAt: Date.now() }, BC(code));
 }
 
 function normalizeRoomMeta(val: any): RoomMeta | null {
@@ -144,7 +197,7 @@ function normalizeRoomMeta(val: any): RoomMeta | null {
     status: raw.status || 'lobby',
     currentGameId: raw.currentGameId || null,
     selectedGameId: raw.selectedGameId || null,
-    players: Array.isArray(players) ? players : [],
+    players: Array.isArray(players) ? players.map(normalizePlayer) : [],
     round: Number(raw.round) || 1,
     updatedAt: Number(raw.updatedAt) || Date.now(),
   };
@@ -217,13 +270,17 @@ export async function awardScores(code: string, awards: Record<string, number>):
     if (!snap.exists()) return;
     const meta = normalizeRoomMeta(snap.val());
     if (!meta) return;
-    // Write only the affected player nodes so we never clobber other players.
-    const updates: Record<string, Player> = {};
+    // Additive, per-field update using explicit slash paths. Passing a nested
+    // `players: { uid: {...} }` object to RTDB update() replaces the whole
+    // `players` node and deletes every other player — so we only ever write the
+    // single `score` field of the players being awarded.
+    const updates: Record<string, number> = {};
     for (const p of meta.players) {
       const add = awards[p.uid] ?? 0;
-      if (add) updates[p.uid] = { ...p, score: p.score + add };
+      if (add) updates[`players/${p.uid}/score`] = p.score + add;
     }
-    await update(r, { players: updates, updatedAt: Date.now() });
+    if (Object.keys(updates).length === 0) return;
+    await update(r, { ...updates, updatedAt: Date.now() });
     return;
   }
   const meta = readLocal<RoomMeta>(LS_ROOM(c));
