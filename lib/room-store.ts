@@ -8,7 +8,7 @@
  */
 import { generateCode, normalizeCode, type Action, type LiveState, type Player, type RoomMeta } from './types';
 import { firebaseConfigured, getFirebase } from './firebase';
-import { get, onValue, ref, remove, set, update, type Unsubscribe } from 'firebase/database';
+import { get, onDisconnect, onValue, ref, remove, set, update, type Database, type Unsubscribe } from 'firebase/database';
 
 const LS_ROOM = (code: string) => `roomcade:room:${code}`;
 const LS_LIVE = (code: string) => `roomcade:live:${code}`;
@@ -39,17 +39,30 @@ export function getSessionUid(): string {
   return uid;
 }
 
+// Best-effort presence cleanup: when this client's RTDB connection drops (tab
+// closed, network lost, crash), remove its own player entry so the lounge never
+// keeps a frozen ghost that blocks the 2–8 capacity. Registered on the player's
+// own node, so it never depends on array indices.
+async function registerPresence(rtdb: Database, code: string, uid: string): Promise<void> {
+  try {
+    await onDisconnect(ref(rtdb, `rooms/${code}/meta/players/${uid}`)).remove();
+  } catch {
+    // Rules may forbid onDisconnect in some environments; degrade gracefully.
+  }
+}
+
 export async function createRoom(name: string, avatarColor: string, initialGameId: string = 'sculptionary'): Promise<{ code: string; uid: string }> {
   const uid = getSessionUid();
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateCode(5);
+    const me: Player = { uid, name: name || 'Host', avatarColor, score: 0 };
     const meta: RoomMeta = {
       code,
       hostId: uid,
       status: 'lobby',
       currentGameId: null,
       selectedGameId: initialGameId || 'sculptionary',
-      players: [{ uid, name: name || 'Host', avatarColor, score: 0 }],
+      players: [me],
       round: 1,
       updatedAt: Date.now(),
     };
@@ -58,7 +71,9 @@ export async function createRoom(name: string, avatarColor: string, initialGameI
       const r = ref(fb.rtdb, `rooms/${code}/meta`);
       const existing = await get(r);
       if (existing.exists()) continue;
-      await set(r, meta);
+      // Players are stored keyed by uid so presence cleanup targets exactly one node.
+      await set(r, { ...meta, players: { [uid]: me } });
+      await registerPresence(fb.rtdb, code, uid);
       sessionStorage.setItem('roomcade:name', name);
       sessionStorage.setItem('roomcade:color', avatarColor);
       return { code, uid };
@@ -84,10 +99,13 @@ export async function joinRoom(rawCode: string, name: string, avatarColor: strin
     if (meta.players.length >= 8 && !meta.players.some((p) => p.uid === uid)) {
       throw new Error('ROOM_FULL');
     }
-    const players = meta.players.some((p) => p.uid === uid)
-      ? meta.players.map((p) => (p.uid === uid ? { ...p, name, avatarColor } : p))
-      : [...meta.players, { uid, name, avatarColor, score: 0 }];
-    await update(r, { players, updatedAt: Date.now() });
+    const existing = meta.players.find((p) => p.uid === uid);
+    const player: Player = existing
+      ? { ...existing, name, avatarColor }
+      : { uid, name: name || `Guest-${uid.slice(2, 6)}`, avatarColor, score: 0 };
+    await set(ref(fb.rtdb, `rooms/${code}/meta/players/${uid}`), player);
+    await update(r, { updatedAt: Date.now() });
+    await registerPresence(fb.rtdb, code, uid);
     sessionStorage.setItem('roomcade:name', name);
     sessionStorage.setItem('roomcade:color', avatarColor);
     return uid;
@@ -199,8 +217,13 @@ export async function awardScores(code: string, awards: Record<string, number>):
     if (!snap.exists()) return;
     const meta = normalizeRoomMeta(snap.val());
     if (!meta) return;
-    const players = meta.players.map((p) => ({ ...p, score: p.score + (awards[p.uid] ?? 0) }));
-    await update(r, { players, updatedAt: Date.now() });
+    // Write only the affected player nodes so we never clobber other players.
+    const updates: Record<string, Player> = {};
+    for (const p of meta.players) {
+      const add = awards[p.uid] ?? 0;
+      if (add) updates[p.uid] = { ...p, score: p.score + add };
+    }
+    await update(r, { players: updates, updatedAt: Date.now() });
     return;
   }
   const meta = readLocal<RoomMeta>(LS_ROOM(c));

@@ -132,8 +132,8 @@ export default function Lobby() {
     return (
       <main className="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center gap-3 p-6 text-center">
         <div className="font-display text-3xl font-extrabold">Room {code} not found</div>
-        <p className="text-white/60">Rooms live in this browser unless Firebase is configured. Create a new room on this device.</p>
-        <button onClick={() => router.push('/')} className="btn-neon rounded-xl px-5 py-2.5 font-bold">Back home</button>
+        <p className="text-white/60">This room has ended or the code is wrong. Double-check the code, or start a fresh room to play.</p>
+        <button onClick={() => router.push('/')} className="btn-neon min-h-[44px] rounded-xl px-5 py-2.5 font-bold">Back home</button>
       </main>
     );
   }
@@ -163,7 +163,7 @@ export default function Lobby() {
             <LobbyScene players={room?.players ?? []} cartridges={GAME_LIST.map((g) => ({ id: g.id, label: g.displayName, color: g.accent }))} />
           </Suspense>
           <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2">
-            <button onClick={() => selectGame(sel - 1)} className="arcade-card px-3 py-2 font-bold hover:bg-white/20">‹</button>
+            <button onClick={() => selectGame(sel - 1)} aria-label="Previous game" className="arcade-card flex h-11 w-11 items-center justify-center font-bold hover:bg-white/20">‹</button>
             <div
               className="arcade-card lobby-pop flex-1 cursor-pointer px-3 py-2 text-center ring-2 ring-white/25"
               onClick={() => selectGame(sel + 1)}
@@ -177,7 +177,7 @@ export default function Lobby() {
                 <span className="dot-pulse ml-1 align-middle text-[#FFC53D]"><span /><span /><span /></span>
               )}
             </div>
-            <button onClick={() => selectGame(sel + 1)} className="arcade-card px-3 py-2 font-bold hover:bg-white/20">›</button>
+            <button onClick={() => selectGame(sel + 1)} aria-label="Next game" className="arcade-card flex h-11 w-11 items-center justify-center font-bold hover:bg-white/20">›</button>
           </div>
         </div>
 

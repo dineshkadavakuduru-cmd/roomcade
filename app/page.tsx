@@ -136,7 +136,7 @@ export default function Landing() {
               </div>
             </div>
 
-          <div className="mt-3 flex items-center justify-between gap-1.5">
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
             {AVATAR_COLORS.map((c) => {
               const isSelected = color === c;
               return (
@@ -144,7 +144,7 @@ export default function Landing() {
                   key={c}
                   onClick={() => setColor(c)}
                   aria-label={AVATAR_NAMES[c] ?? c}
-                  className={`group relative flex h-10 w-10 items-center justify-center rounded-xl border-2 text-base transition-all hover:scale-110 ${
+                  className={`group relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 text-base transition-all hover:scale-110 ${
                     isSelected ? 'ring-2 ring-white scale-110 avatar-bounce' : 'opacity-70 hover:opacity-100'
                   }`}
                   style={{
