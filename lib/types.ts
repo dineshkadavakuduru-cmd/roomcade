@@ -8,6 +8,10 @@ export interface Player {
   /** Stable avatar id (see lib/avatars). Optional for pre-registry room state. */
   avatarId?: string;
   score: number;
+  /** Presence bookkeeping. Optional so pre-upgrade room state still normalizes. */
+  joinedAt?: number;
+  lastSeen?: number;
+  online?: boolean;
 }
 
 export interface RoomMeta {

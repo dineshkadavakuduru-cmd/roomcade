@@ -213,13 +213,9 @@ function GameScene({ roomCode }: { roomCode: string }) {
   useEffect(() => subscribeLive(roomCode, (s) => setL((s as FState) ?? null)), [roomCode]);
   useEffect(() => subscribeRoom(roomCode, setRoom), [roomCode]);
 
-  // When the room enters 'in-game', the lobby's startGame clears the live state.
-  // Initialize the placing phase so the fleet panel renders immediately.
-  useEffect(() => {
-    if (!live && room?.status === 'in-game' && room?.players?.length >= 2) {
-      setLive(roomCode, init(room.players.map((p) => p.uid)));
-    }
-  }, [live, room?.status, room?.players?.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The shared live state is seeded transactionally by the play route
+  // (ensureLiveInitialized) before this scene mounts, so `live` is never
+  // undefined on first render. No client-local initialization races here.
 
   const me = room?.players.find((p) => p.uid === uid);
   const opponent = room?.players.find((p) => p.uid !== uid);
@@ -285,11 +281,13 @@ function GameScene({ roomCode }: { roomCode: string }) {
 
   const awardedRef = useRef(false);
   useEffect(() => {
-    if (live?.winner && !awardedRef.current) {
+    // Only the winner's own client writes the award: rules forbid writing another
+    // player's score, and having both clients award would double the points.
+    if (live?.winner && live.winner === uid && !awardedRef.current) {
       awardedRef.current = true;
-      awardScores(roomCode, { [live.winner]: 300 });
+      void awardScores(roomCode, { [uid]: 300 });
     }
-  }, [live?.winner]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [live?.winner, uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // My board shows my own fleet (or the fleet I'm placing); the enemy board shows my shots.
   const myFleet = live?.grids[uid] ?? emptyGrid();
@@ -406,15 +404,19 @@ function GameScene({ roomCode }: { roomCode: string }) {
             </div>
             <p className="text-sm text-white/70">All enemy ships sunk.</p>
             <div className="mt-2 flex flex-col gap-1.5">
-              {isHost && (
-                <button
-                  onClick={() => setLive(roomCode, init(room?.players.map((p) => p.uid) ?? []))}
-                  className="btn-neon rounded-xl px-4 py-2 text-sm font-bold"
-                >
-                  🔁 Rematch
-                </button>
+              {isHost ? (
+                <>
+                  <button
+                    onClick={() => setLive(roomCode, init(room?.players.map((p) => p.uid) ?? []))}
+                    className="btn-neon rounded-xl px-4 py-2 text-sm font-bold"
+                  >
+                    🔁 Rematch
+                  </button>
+                  <ReturnToLounge roomCode={roomCode} />
+                </>
+              ) : (
+                <p className="text-xs text-white/50">Waiting for the host to start a rematch…</p>
               )}
-              <ReturnToLounge roomCode={roomCode} />
             </div>
           </div>
         )}

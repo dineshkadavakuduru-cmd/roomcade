@@ -177,11 +177,13 @@ function GameScene({ roomCode }: { roomCode: string }) {
   }, [live?.phase, live?.roundWinner, live?.round]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (live?.winner && !awardedRef.current) {
+    // Only the winner writes their own +200: that is the one score path RTDB rules
+    // allow a non-host to touch, and it prevents the winner being paid twice.
+    if (live?.winner && live.winner === uid && !awardedRef.current) {
       awardedRef.current = true;
-      awardScores(roomCode, { [live.winner]: 200 });
+      void awardScores(roomCode, { [uid]: 200 });
     }
-  }, [live?.winner]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [live?.winner, uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex h-full flex-col gap-2">
@@ -283,7 +285,11 @@ function GameScene({ roomCode }: { roomCode: string }) {
               {live.winner === uid ? '🏆 YOU WIN!' : '💀 YOU LOSE'}
             </div>
             <p className="text-sm text-white/70">Final: {live.scores[uid] ?? 0} — {live.scores[opponent?.uid ?? ''] ?? 0}</p>
-            <ReturnToLounge roomCode={roomCode} className="mt-2" />
+            {isHost ? (
+              <ReturnToLounge roomCode={roomCode} className="mt-2" />
+            ) : (
+              <p className="mt-2 text-xs text-white/50">Waiting for the host to return to the lounge…</p>
+            )}
           </div>
         )}
       </div>

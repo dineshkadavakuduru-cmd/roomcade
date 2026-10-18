@@ -282,7 +282,11 @@ function GameScene({ roomCode }: { roomCode: string }) {
             {isHost && !live.winner && (
               <button onClick={() => act('start', { playerUids: room?.players.map((p) => p.uid) ?? [] })} className="btn-neon mt-2 rounded-xl px-4 py-2 text-sm font-bold">🔁 Rematch</button>
             )}
-            <ReturnToLounge roomCode={roomCode} className="mt-2" />
+            {isHost ? (
+              <ReturnToLounge roomCode={roomCode} className="mt-2" />
+            ) : (
+              <p className="mt-2 text-xs text-white/50">Waiting for the host to return to the lounge…</p>
+            )}
           </div>
         )}
       </div>
