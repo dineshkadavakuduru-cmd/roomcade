@@ -70,6 +70,8 @@ export function getFirebase() {
  * `browserSessionPersistence` gives exactly that. Without it, both tabs would
  * share one Firebase uid and overwrite each other's player node.
  */
+const AUTH_TIMEOUT_MS = 10_000;
+
 export async function ensureAnonymousAuth(): Promise<string | null> {
   const fb = getFirebase();
   if (!fb) return null;
@@ -84,7 +86,12 @@ export async function ensureAnonymousAuth(): Promise<string | null> {
       }
       try {
         if (!fb.auth.currentUser) {
-          const cred = await signInAnonymously(fb.auth);
+          const cred = await Promise.race([
+            signInAnonymously(fb.auth),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('auth-timeout')), AUTH_TIMEOUT_MS)
+            ),
+          ]);
           return cred.user.uid;
         }
         return fb.auth.currentUser.uid;

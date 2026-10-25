@@ -14,7 +14,7 @@
 }
 
 html, body {
-  background: radial-gradient(1200px 800px at 70% -10%, #23235c 0%, #171736 45%, #0d0d24 100%);
+  background: radial-gradient(1200px 800px at 70% -10%, #1a1a3a 0%, #171736 45%, #0d0d24 100%);
   color: var(--cream);
   font-family: "Nunito", system-ui, sans-serif;
   min-height: 100%;

@@ -74,6 +74,7 @@ function clearScoreHint(code: string, uid: string) {
 
 export { MAX_PLAYERS, ROOM_TTL_MS } from './room-logic';
 const HEARTBEAT_MS = 25_000;
+const IDENTITY_TIMEOUT_MS = 12_000;
 
 function readLocal<T>(key: string): T | null {
   try {
@@ -147,16 +148,20 @@ export async function ensureIdentity(): Promise<string> {
   if (identityUid) return identityUid;
   if (!firebaseConfigured()) return getSessionUid();
   if (!identityPromise) {
-    identityPromise = ensureAnonymousAuth().then((uid) => {
+    identityPromise = (async () => {
+      const uid = await Promise.race([
+        ensureAnonymousAuth(),
+        new Promise<string | null>((_, reject) =>
+          setTimeout(() => reject(new Error('identity-timeout')), IDENTITY_TIMEOUT_MS)
+        ),
+      ]);
       if (uid) {
         identityUid = uid;
         sessionStorage.setItem('roomcade:uid', uid);
         return uid;
       }
-      // Anonymous auth disabled/misconfigured: keep the app usable locally, the
-      // RTDB writes will surface PERMISSION_DENIED in the connection indicator.
       return localUid();
-    });
+    })();
   }
   return identityPromise;
 }
@@ -279,8 +284,15 @@ async function reapAbandonedRoom(rtdb: Database, code: string, meta: RoomMeta | 
   }
 }
 
+const ROOM_CREATE_TIMEOUT_MS = 15_000;
+
 export async function createRoom(name: string, avatarColor: string, initialGameId: string = 'sculptionary'): Promise<{ code: string; uid: string }> {
-  const uid = await ensureIdentity();
+  const uid = await Promise.race([
+    ensureIdentity(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('identity-timeout')), IDENTITY_TIMEOUT_MS)
+    ),
+  ]);
   const av = avatarFields(avatarColor);
   for (let attempt = 0; attempt < 6; attempt++) {
     const code = generateCode(5);
@@ -310,12 +322,18 @@ export async function createRoom(name: string, avatarColor: string, initialGameI
       try {
         // Room creation is a single multi-path write validated by rules: the
         // creator must be the host and the only player.
-        await set(metaRef, { ...meta, players: { [uid]: me } });
+        await Promise.race([
+          set(metaRef, { ...meta, players: { [uid]: me } }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('room-create-timeout')), ROOM_CREATE_TIMEOUT_MS)
+          ),
+        ]);
       } catch (e) {
         // A code collision is caught by the get() above; a denial here means the
         // write itself was rejected (almost always: rules require auth and
         // anonymous sign-in is disabled in the Firebase project).
         if (isPermissionDenied(e) && authFailureReason()) throw new Error('AUTH_REQUIRED');
+        if ((e as Error).message === 'room-create-timeout') throw new Error('ROOM_CREATE_TIMEOUT');
         throw new Error('ROOM_CREATE_DENIED');
       }
       await registerPresence(fb.rtdb, code, uid, displayName);
@@ -330,68 +348,91 @@ export async function createRoom(name: string, avatarColor: string, initialGameI
   throw new Error('ROOM_CODE_TAKEN');
 }
 
+const JOIN_ROOM_TIMEOUT_MS = 15_000;
+
 function joinError(message: string): Error {
   return new Error(message);
 }
 
 export async function joinRoom(rawCode: string, name: string, avatarColor: string): Promise<string> {
   const code = normalizeCode(rawCode);
-  const uid = await ensureIdentity();
+  const uid = await Promise.race([
+    ensureIdentity(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('identity-timeout')), IDENTITY_TIMEOUT_MS)
+    ),
+  ]);
   if (firebaseConfigured()) {
     const fb = getFirebase()!;
     const metaRef = ref(fb.rtdb, `rooms/${code}/meta`);
-    const snap = await get(metaRef);
-    const meta = normalizeRoomMeta(snap.val());
-    if (!meta) throw joinError('ROOM_NOT_FOUND');
-    if (isStale(meta)) {
-      await reapAbandonedRoom(fb.rtdb, code, meta);
-      throw joinError('ROOM_NOT_FOUND');
-    }
-    // A recap is a finished night; don't resurrect it as a live room.
-    if (meta.status === 'recap') throw joinError('ROOM_ENDED');
-
-    const existing = meta.players.find((p) => p.uid === uid);
-    if (!existing && meta.players.length >= MAX_PLAYERS) throw joinError('ROOM_FULL');
-
-    const av = avatarFields(avatarColor);
-    const fallback = `Guest-${uid.slice(-4)}`;
-    const displayName = uniqueName(cleanName(name, fallback), meta.players.filter((p) => p.uid !== uid).map((p) => p.name));
-    const now = Date.now();
-    const player: Player = existing
-      ? { ...existing, name: displayName, ...av, lastSeen: now, online: true, joinedAt: existing.joinedAt || now }
-      : { uid, name: displayName, ...av, score: readScoreHint(code, uid), joinedAt: now, lastSeen: now, online: true };
-
     try {
-      await set(ref(fb.rtdb, `rooms/${code}/meta/players/${uid}`), player);
+      const snap = await Promise.race([
+        get(metaRef),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('join-room-timeout')), JOIN_ROOM_TIMEOUT_MS)
+        ),
+      ]);
+      const meta = normalizeRoomMeta(snap.val());
+      if (!meta) throw joinError('ROOM_NOT_FOUND');
+      if (isStale(meta)) {
+        await reapAbandonedRoom(fb.rtdb, code, meta);
+        throw joinError('ROOM_NOT_FOUND');
+      }
+      // A recap is a finished night; don't resurrect it as a live room.
+      if (meta.status === 'recap') throw joinError('ROOM_ENDED');
+
+      const existing = meta.players.find((p) => p.uid === uid);
+      if (!existing && meta.players.length >= MAX_PLAYERS) throw joinError('ROOM_FULL');
+
+      const av = avatarFields(avatarColor);
+      const fallback = `Guest-${uid.slice(-4)}`;
+      const displayName = uniqueName(cleanName(name, fallback), meta.players.filter((p) => p.uid !== uid).map((p) => p.name));
+      const now = Date.now();
+      const player: Player = existing
+        ? { ...existing, name: displayName, ...av, lastSeen: now, online: true, joinedAt: existing.joinedAt || now }
+        : { uid, name: displayName, ...av, score: readScoreHint(code, uid), joinedAt: now, lastSeen: now, online: true };
+
+      try {
+        await Promise.race([
+          set(ref(fb.rtdb, `rooms/${code}/meta/players/${uid}`), player),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('join-room-timeout')), JOIN_ROOM_TIMEOUT_MS)
+          ),
+        ]);
+      } catch (e) {
+        // The capacity limit is enforced atomically by RTDB validation at the
+        // players node (numChildren <= 8), so a lost race surfaces as a denial.
+        const after = normalizeRoomMeta((await get(metaRef)).val());
+        if (after && !after.players.some((p) => p.uid === uid) && after.players.length >= MAX_PLAYERS) {
+          throw joinError('ROOM_FULL');
+        }
+        if (isPermissionDenied(e)) {
+          throw joinError(authFailureReason() ? 'AUTH_REQUIRED' : 'JOIN_DENIED');
+        }
+        if ((e as Error).message === 'join-room-timeout') throw joinError('JOIN_TIMEOUT');
+        throw e;
+      }
+      await update(metaRef, { updatedAt: now }).catch(() => {});
+      await registerPresence(fb.rtdb, code, uid, displayName);
+
+      // Two clients picking the same display name at the same instant both see the
+      // name as free; settle it with a second pass so the lounge never shows twins.
+      const settled = normalizeRoomMeta((await get(metaRef)).val());
+      if (settled) {
+        const twins = settled.players.filter((p) => p.uid !== uid && p.name.toLowerCase() === displayName.toLowerCase());
+        if (twins.length > 0) {
+          const renamed = uniqueName(displayName, settled.players.filter((p) => p.uid !== uid).map((p) => p.name));
+          await update(ref(fb.rtdb, `rooms/${code}/meta/players/${uid}`), { name: renamed }).catch(() => {});
+          rememberIdentity(renamed, av);
+          return uid;
+        }
+      }
+      rememberIdentity(displayName, av);
+      return uid;
     } catch (e) {
-      // The capacity limit is enforced atomically by RTDB validation at the
-      // players node (numChildren <= 8), so a lost race surfaces as a denial.
-      const after = normalizeRoomMeta((await get(metaRef)).val());
-      if (after && !after.players.some((p) => p.uid === uid) && after.players.length >= MAX_PLAYERS) {
-        throw joinError('ROOM_FULL');
-      }
-      if (isPermissionDenied(e)) {
-        throw joinError(authFailureReason() ? 'AUTH_REQUIRED' : 'JOIN_DENIED');
-      }
+      if ((e as Error).message === 'join-room-timeout') throw joinError('JOIN_TIMEOUT');
       throw e;
     }
-    await update(metaRef, { updatedAt: now }).catch(() => {});
-    await registerPresence(fb.rtdb, code, uid, displayName);
-
-    // Two clients picking the same display name at the same instant both see the
-    // name as free; settle it with a second pass so the lounge never shows twins.
-    const settled = normalizeRoomMeta((await get(metaRef)).val());
-    if (settled) {
-      const twins = settled.players.filter((p) => p.uid !== uid && p.name.toLowerCase() === displayName.toLowerCase());
-      if (twins.length > 0) {
-        const renamed = uniqueName(displayName, settled.players.filter((p) => p.uid !== uid).map((p) => p.name));
-        await update(ref(fb.rtdb, `rooms/${code}/meta/players/${uid}`), { name: renamed }).catch(() => {});
-        rememberIdentity(renamed, av);
-        return uid;
-      }
-    }
-    rememberIdentity(displayName, av);
-    return uid;
   }
 
   const meta = readLocal<RoomMeta>(LS_ROOM(code));
