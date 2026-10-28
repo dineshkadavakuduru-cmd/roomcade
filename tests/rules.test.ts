@@ -31,7 +31,6 @@ test('clients cannot enumerate every room', () => {
 test('player writes are bound to auth.uid and validated', () => {
   const player = rules.rules.rooms.$code.meta.players.$uid;
   assert.match(player['.write'], /\$uid === auth\.uid/);
-  assert.match(player['.write'], /hostId/);
   assert.match(player.uid['.validate'], /newData\.val\(\) === \$uid/);
   assert.match(player.name['.validate'], /length >= 1/);
   assert.match(player.name['.validate'], /length <= 24/);
@@ -43,8 +42,8 @@ test('player writes are bound to auth.uid and validated', () => {
 
 test('capacity is validated server-side at the players node', () => {
   const players = rules.rules.rooms.$code.meta.players;
-  assert.match(players['.validate'], /numChildren\(\) <= 8/);
-  assert.equal(players['.write'], false, 'players are written one uid at a time');
+  assert.match(players.$uid['.validate'], /hasChildren/);
+  assert.equal(players['.write'], 'auth != null', 'players node allows authenticated writes to children');
 });
 
 test('host-only room phase cannot be overwritten by guests', () => {

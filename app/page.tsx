@@ -48,6 +48,10 @@ export default function Landing() {
       }
       else if (msg === 'ROOM_CODE_TAKEN' || msg === 'ROOM_CREATE_DENIED') setErr('Could not create the room — try again.');
       else if (msg === 'ROOM_CREATE_TIMEOUT' || msg === 'identity-timeout') setErr('Request timed out. Check your connection and try again.');
+      else if (msg.includes('Permission denied') || msg.includes('permission-denied')) {
+        setErr('The room service is temporarily unavailable. Please try again in a moment, or check the warning banner above.');
+        console.warn('[Roomcade] Room creation failed: permission denied. See docs/FIREBASE_HARDENING.md.');
+      }
       else setErr(msg || 'Could not create room.');
       setCreateState('error');
       setRetryCount(r => r + 1);
@@ -75,6 +79,10 @@ export default function Landing() {
       }
       else if (msg === 'JOIN_DENIED') setErr('The room refused the join — check the code and try again.');
       else if (msg === 'JOIN_TIMEOUT' || msg === 'identity-timeout') setErr('Request timed out. Check your connection and try again.');
+      else if (msg.includes('Permission denied') || msg.includes('permission-denied')) {
+        setErr('The room service is temporarily unavailable. Please try again in a moment, or check the warning banner above.');
+        console.warn('[Roomcade] Join failed: permission denied. See docs/FIREBASE_HARDENING.md.');
+      }
       else setErr(msg);
       setJoinState('error');
       setRetryCount(r => r + 1);

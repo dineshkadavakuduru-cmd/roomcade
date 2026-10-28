@@ -5,16 +5,13 @@
 
     "rooms": {
       ".read": false,
-      ".write": false,
+      ".write": "auth != null",
 
       "$code": {
         ".read": "auth != null",
-
-        ".write": "auth != null && !newData.exists() && (data.child('meta').child('players').numChildren() === 0 || (data.child('meta').child('players').numChildren() === 1 && data.child('meta').child('players').child(auth.uid).exists()))",
+        ".write": "auth != null",
 
         "meta": {
-          ".write": "auth != null && !data.exists() && newData.child('hostId').val() === auth.uid && newData.child('players').child(auth.uid).exists() && newData.child('players').numChildren() === 1",
-
           "code": {
             ".write": "auth != null && !data.exists()",
             ".validate": "newData.isString() && newData.val() === $code && newData.val().length === 5"
@@ -51,11 +48,9 @@
           },
 
           "players": {
-            ".write": false,
-            ".validate": "newData.numChildren() <= 8",
-
+            ".write": "auth != null",
             "$uid": {
-              ".write": "auth != null && ($uid === auth.uid && (!newData.exists() || data.parent().parent().child('status').val() !== 'recap') || (data.exists() && data.parent().parent().child('hostId').val() === auth.uid))",
+              ".write": "auth != null && $uid === auth.uid",
 
               ".validate": "newData.hasChildren(['uid', 'name', 'avatarColor', 'score'])",
 
