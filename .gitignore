@@ -6,5 +6,6 @@ out/
 *.log
 
 .vercel
+qa-artifacts/
 
 tsconfig.tsbuildinfo

@@ -22,7 +22,7 @@ import {
   roomIsStale,
   uniqueDisplayName as uniqueName,
 } from './room-logic';
-import { authFailureReason, currentAuthUid, ensureAnonymousAuth, firebaseConfigured, getFirebase } from './firebase';
+import { authFailureReason, currentAuthUid, ensureAnonymousAuth, firebaseConfigured, getFirebase, retryAnonymousAuth } from './firebase';
 import {
   get,
   onDisconnect,
@@ -149,8 +149,10 @@ export async function ensureIdentity(): Promise<string> {
   if (!firebaseConfigured()) return getSessionUid();
   if (!identityPromise) {
     identityPromise = (async () => {
+      // If a previous attempt failed, clear the cached failure and retry once.
+      const authFn = authFailureReason() ? retryAnonymousAuth : ensureAnonymousAuth;
       const uid = await Promise.race([
-        ensureAnonymousAuth(),
+        authFn(),
         new Promise<string | null>((_, reject) =>
           setTimeout(() => reject(new Error('identity-timeout')), IDENTITY_TIMEOUT_MS)
         ),
@@ -160,6 +162,10 @@ export async function ensureIdentity(): Promise<string> {
         sessionStorage.setItem('roomcade:uid', uid);
         return uid;
       }
+      // Auth failed — clear the cached promise so the next call retries instead
+      // of returning this stale local uid. createRoom/joinRoom will still throw
+      // AUTH_REQUIRED because the RTDB write fails without a real auth uid.
+      identityPromise = null;
       return localUid();
     })();
   }
@@ -189,6 +195,16 @@ function isPermissionDenied(e: unknown): boolean {
 export function firebaseAuthWarning(): string | null {
   if (!firebaseConfigured()) return null;
   return authFailureReason();
+}
+
+/**
+ * Retry anonymous auth. Called by AuthWarning retry button. Clears the cached
+ * identity promise so the next ensureIdentity() call will re-attempt sign-in.
+ */
+export async function retryAuth(): Promise<void> {
+  identityUid = null;
+  identityPromise = null;
+  await ensureIdentity();
 }
 
 function normalizeRoomMeta(val: any): RoomMeta | null {

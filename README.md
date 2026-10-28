@@ -53,14 +53,14 @@ tab 2, and play a full round of every game.
 
 | Layer | Firebase configured | No env (default) |
 |-------|--------------------|------------------|
-| Room metadata (host, players, scores, status) | Firestore `rooms/{code}` | localStorage + BroadcastChannel |
+| Room metadata (host, players, scores, status) | Realtime Database `rooms/{code}/meta` | localStorage + BroadcastChannel |
 | Live per-game state (positions, votes, buzzers) | Realtime Database `rooms/{code}/live` | localStorage + BroadcastChannel |
 | Identity | Firebase Anonymous Auth | per-tab session id |
 
 Without env vars the app runs a **local same-browser backend**, so the full
 create → join → play → recap flow works with zero setup. For cross-device play,
 copy `.env.example` to `.env.local` and fill in a Firebase project (Anonymous
-Auth + Firestore + Realtime Database enabled):
+Auth + Realtime Database enabled):
 
 ```
 NEXT_PUBLIC_FIREBASE_API_KEY=
@@ -72,6 +72,38 @@ NEXT_PUBLIC_FIREBASE_APP_ID=
 
 The same variables must be set in Vercel → Project → Settings → Environment
 Variables for the deployed site, then redeployed.
+
+## Security & operations
+
+The Realtime Database is locked down by `database.rules.json`:
+
+- reading the whole `rooms` tree is denied (a room code is the only capability);
+- players may only write their own node — scores, names and avatars can't be forged;
+- `status`, `currentGameId`, `selectedGameId`, `round` and `hostId` are host-only;
+- `numChildren() <= 8` is validated server-side, so simultaneous joins can't exceed capacity;
+- scores are numeric, bounded and monotonic; names/avatars/timestamps are typed and bounded.
+
+**Prerequisite:** the configured project currently has **Anonymous Auth
+disabled** and returns `200` for `<db>/rooms.json`, so the live database is
+world-readable today. Enable *Authentication → Anonymous* and deploy the rules
+before going cross-device; until then the app shows an amber warning banner.
+
+Deploy it and restrict the browser API key:
+
+```bash
+npx firebase-tools use <your-firebase-project-id>
+npx firebase-tools deploy --only database   # rules
+npx firebase-tools deploy --only functions  # hourly TTL sweep (Blaze plan)
+```
+
+Step-by-step (API key HTTP-referrer + API restrictions, App Check, TTL function,
+secret hygiene): **[docs/FIREBASE_HARDENING.md](docs/FIREBASE_HARDENING.md)**.
+
+Rooms are cleaned up two ways: clients reap a stale/empty room when its code is
+reused or joined, and `functions/index.js` runs an hourly sweep that deletes
+0-player and 6-hour-idle rooms. Presence is registered with `onDisconnect` for
+**both** per-player nodes (`meta/players/{uid}` and `presence/{uid}`), plus a
+25 s heartbeat used to prune ghosts left by older clients.
 
 ## Project structure
 
@@ -95,9 +127,14 @@ components/
   Scoreboard.tsx | RecapPodium.tsx
 lib/
   types.ts                    # RoomMeta, Player, LiveState, Action, code gen
-  firebase.ts                 # Firebase init (null when unconfigured)
+  firebase.ts                 # Firebase init + per-tab anonymous auth
   room-store.ts               # room + live state abstraction (both backends)
+  room-logic.ts               # pure room invariants (names, TTL, ghosts) — unit tested
   anime.ts                    # 2D UI motion helpers (anime.js only)
+database.rules.json           # RTDB security rules (deploy with firebase-tools)
+firebase.json                 # rules + functions deploy config
+functions/index.js            # scheduled TTL sweep for empty/abandoned rooms
+docs/FIREBASE_HARDENING.md    # rules deploy, API-key restrictions, App Check
 design/DESIGN.md              # design tokens + provenance (Refero: Slush, Rainbow)
 ```
 
@@ -139,9 +176,11 @@ Tailwind CSS · Firebase (Anonymous Auth, Firestore, RTDB) · Deployed on Vercel
 ## Scripts
 
 ```bash
-npm run dev      # local dev server
-npm run build    # production build (type-check + lint)
-npm start        # serve production build
+npm run dev              # local dev server
+npm run build            # production build (type-check + lint)
+npm test                 # unit tests (games + room invariants + rules)
+npm run test:multiplayer # live RTDB integration test (needs .env.local)
+npm start                # serve production build
 ```
 
 ## Definition of done (status)
@@ -154,4 +193,8 @@ npm start        # serve production build
 - [x] One shared lobby↔game transition across all games
 - [x] Scores persist across a multi-game session; recap crowns the winner
 - [x] Production build is clean; all routes serve 200
-- [ ] Cross-device rooms (needs Firebase env vars — see above)
+- [x] RTDB rules enforce per-uid writes, host-only phase/host, 2–8 capacity, typed fields
+- [x] Host migration when the host disconnects; presence cleanup on every per-player node
+- [x] Every game seeds a transactional safe initial live state on entering play
+- [x] Mobile 375 px / landscape layout, 44 px touch targets, long-name truncation
+- [ ] Cross-device rooms (needs Firebase env vars + rules deploy — see above)

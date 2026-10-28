@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { IdentityGate } from '@/components/IdentityGate';
 import './globals.css';
 
 export const viewport: Viewport = {
@@ -41,7 +42,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preload" as="style" href={FONT_CSS_URL} />
         <link href={FONT_CSS_URL} rel="stylesheet" />
       </head>
-      <body className="grain min-h-screen antialiased">{children}</body>
+      <body className="grain min-h-screen antialiased">
+        <IdentityGate>{children}</IdentityGate>
+      </body>
     </html>
   );
 }

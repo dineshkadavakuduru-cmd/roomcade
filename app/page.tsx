@@ -42,7 +42,10 @@ export default function Landing() {
       router.push(`/room/${c}`);
     } catch (e: any) {
       const msg = e?.message ?? '';
-      if (msg === 'AUTH_REQUIRED') setErr('Firebase anonymous sign-in is disabled — enable Authentication → Anonymous (see docs/FIREBASE_HARDENING.md).');
+      if (msg === 'AUTH_REQUIRED') {
+        setErr('The room service is temporarily unavailable. Please try again in a moment, or check the warning banner above.');
+        console.warn('[Roomcade] Room creation failed: anonymous auth not enabled. See docs/FIREBASE_HARDENING.md.');
+      }
       else if (msg === 'ROOM_CODE_TAKEN' || msg === 'ROOM_CREATE_DENIED') setErr('Could not create the room — try again.');
       else if (msg === 'ROOM_CREATE_TIMEOUT' || msg === 'identity-timeout') setErr('Request timed out. Check your connection and try again.');
       else setErr(msg || 'Could not create room.');
@@ -66,7 +69,10 @@ export default function Landing() {
       if (msg === 'ROOM_NOT_FOUND') setErr('Room not found — the code is wrong or the room expired.');
       else if (msg === 'ROOM_FULL') setErr('Room is full (8 max).');
       else if (msg === 'ROOM_ENDED') setErr('That night already ended. Start a fresh room.');
-      else if (msg === 'AUTH_REQUIRED') setErr('Firebase anonymous sign-in is disabled — enable Authentication → Anonymous (see docs/FIREBASE_HARDENING.md).');
+      else if (msg === 'AUTH_REQUIRED') {
+        setErr('The room service is temporarily unavailable. Please try again in a moment, or check the warning banner above.');
+        console.warn('[Roomcade] Join failed: anonymous auth not enabled. See docs/FIREBASE_HARDENING.md.');
+      }
       else if (msg === 'JOIN_DENIED') setErr('The room refused the join — check the code and try again.');
       else if (msg === 'JOIN_TIMEOUT' || msg === 'identity-timeout') setErr('Request timed out. Check your connection and try again.');
       else setErr(msg);

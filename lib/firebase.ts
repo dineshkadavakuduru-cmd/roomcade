@@ -118,3 +118,15 @@ export function currentAuthUid(): string | null {
 export function resetAuthCacheForTests(): void {
   authPromise = null;
 }
+
+/**
+ * Retry anonymous auth after a failure. Clears the cached error and promise so
+ * the next ensureAnonymousAuth() attempt is fresh. Returns the uid on success,
+ * null on failure. Called by the AuthWarning retry button and internally before
+ * room operations to recover from transient auth outages.
+ */
+export async function retryAnonymousAuth(): Promise<string | null> {
+  authPromise = null;
+  authFailure = null;
+  return ensureAnonymousAuth();
+}
