@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ensureIdentity } from '@/lib/room-store';
+import { RoomProgress } from './RoomProgress';
 
 /**
  * Resolve the player identity (anonymous Firebase auth when configured) *before*
@@ -13,7 +14,7 @@ export function IdentityGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let alive = true;
-    void ensureIdentity().finally(() => {
+    void ensureIdentity().catch(() => {}).finally(() => {
       if (alive) setReady(true);
     });
     return () => {
@@ -23,10 +24,10 @@ export function IdentityGate({ children }: { children: ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-6" aria-busy="true" aria-live="polite">
+      <div className="flex min-h-screen items-center justify-center p-6">
         <div className="text-center">
           <div className="font-display text-2xl font-extrabold text-[#FFC53D]">ROOMCADE</div>
-          <div className="mt-1 text-xs font-semibold uppercase tracking-[.25em] text-white/50">Warming up the arcade…</div>
+          <RoomProgress step="Connecting to the room service…" onRetry={() => location.reload()} />
         </div>
       </div>
     );

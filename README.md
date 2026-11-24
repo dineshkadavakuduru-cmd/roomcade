@@ -180,8 +180,11 @@ npm run dev              # local dev server
 npm run build            # production build (type-check + lint)
 npm test                 # unit tests (games + room invariants + rules)
 npm run test:multiplayer # live RTDB integration test (needs .env.local)
+npm run test:room-lifecycle # production Quick Draw duel in desktop and touch Chromium
 npm start                # serve production build
 ```
+
+The lifecycle check defaults to Roomcade production and creates two disposable rooms. Set `CHROME_PATH` if Chrome is installed somewhere other than the default Windows path. To test a local build connected to Firebase, run `npm run test:room-lifecycle -- http://localhost:3000`.
 
 ## Definition of done (status)
 

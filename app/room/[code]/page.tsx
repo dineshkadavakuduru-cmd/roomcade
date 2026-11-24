@@ -1,6 +1,6 @@
 'use client';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { Canvas } from '@react-three/fiber';
 import { AVATAR_COLORS, type RoomMeta } from '@/lib/types';
 import { HOST_GRACE_MS } from '@/lib/room-logic';
@@ -26,6 +26,8 @@ import { popIn } from '@/lib/anime';
 import { AvatarIcon } from '@/components/AvatarIcons';
 import { ConnectionIndicator } from '@/components/ConnectionIndicator';
 import { AuthWarning } from '@/components/AuthWarning';
+import { RoomProgress, joinFailure } from '@/components/RoomProgress';
+import { useRoomNavigation } from '@/lib/use-room-navigation';
 
 const PreviewCanvas = ({ id }: { id: string }) => {
   const game = GAME_LIST.find((g) => g.id === id)!;
@@ -41,22 +43,25 @@ const PreviewCanvas = ({ id }: { id: string }) => {
 
 export default function Lobby() {
   const params = useParams();
-  const router = useRouter();
+  const navigate = useRoomNavigation();
   const code = String(params.code ?? '').toUpperCase();
   const [uid, setUid] = useState(() => (typeof window === 'undefined' ? '' : getSessionUid()));
   const [room, setRoom] = useState<RoomMeta | null>(null);
   const [missing, setMissing] = useState(false);
-  const [ended, setEnded] = useState(false);
-  const [full, setFull] = useState(false);
+  const [joinStep, setJoinStep] = useState('Finding the room…');
+  const [joinError, setJoinError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [joining, setJoining] = useState(false);
   const [sel, setSel] = useState(0);
   const [warp, setWarp] = useState(false);
+  const [openingGame, setOpeningGame] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState('');
   const [recap, setRecap] = useState(false);
   const [recapHidden, setRecapHidden] = useState(false);
   const [copied, setCopied] = useState(false);
   const [joinDing, setJoinDing] = useState(false);
   const prevCount = useRef(0);
-  const lastJoinAt = useRef(0);
   const hostClaimAt = useRef(0);
   const prunedOnce = useRef(false);
 
@@ -67,29 +72,43 @@ export default function Lobby() {
     let alive = true;
     void ensureIdentity().then((u) => {
       if (alive) setUid(u);
-    });
+    }).catch(() => {});
     return () => {
       alive = false;
     };
   }, []);
 
-  // Self-heal: if this tab has no player entry (refresh, rejoin, migrated host),
-  // auto-join with the saved identity. Throttled so a failing join can't spin.
-  useEffect(() => subscribeRoom(code, (m) => {
-    setRoom(m);
-    setMissing(!m);
-    if (!m) return;
-    if (!uid || m.players.some((p) => p.uid === uid)) return;
-    if (Date.now() - lastJoinAt.current < 5000) return;
-    lastJoinAt.current = Date.now();
-    const n = sessionStorage.getItem('roomcade:name') || `Guest-${uid.slice(-4)}`;
-    const savedAvatar =
-      sessionStorage.getItem('roomcade:avatarId') || sessionStorage.getItem('roomcade:color') || AVATAR_COLORS[2]!;
-    joinRoom(code, n, savedAvatar).catch((e: any) => {
-      if (e?.message === 'ROOM_ENDED') setEnded(true);
-      else if (e?.message === 'ROOM_FULL') setFull(true);
-    });
-  }), [code, uid]);
+  useEffect(() => {
+    let active = true;
+    let attempted = false;
+    let joinInFlight = false;
+    const unsubscribe = subscribeRoom(code, (m) => {
+      setRoom(m);
+      setMissing(!m);
+      if (!m || !uid) return;
+      if (m.players.some((p) => p.uid === uid)) {
+        if (!joinInFlight) {
+          attempted = false;
+          setJoinError('');
+        }
+        return;
+      }
+      if (attempted) return;
+      attempted = true;
+      joinInFlight = true;
+      setJoining(true);
+      const name = sessionStorage.getItem('roomcade:name') || `Guest-${uid.slice(-4)}`;
+      const avatar = sessionStorage.getItem('roomcade:avatarId') || sessionStorage.getItem('roomcade:color') || AVATAR_COLORS[2]!;
+      void joinRoom(code, name, avatar, (step) => { if (active) setJoinStep(step); })
+        .then(() => { attempted = false; })
+        .catch((error) => { if (active) setJoinError(joinFailure(error)); })
+        .finally(() => {
+          joinInFlight = false;
+          if (active) setJoining(false);
+        });
+    }, () => setJoinError('Could not read the room. Check your connection and retry.'));
+    return () => { active = false; unsubscribe(); };
+  }, [code, uid, attempt]);
 
   // Host left / dropped: the first remaining client takes over so the room never
   // gets stuck with a host that isn't in the player list. A reload also fires
@@ -127,10 +146,10 @@ export default function Lobby() {
   // Follow host into the game + back.
   useEffect(() => {
     if (!room) return;
-    if (room.status === 'in-game' && room.currentGameId) {
+    if (me && !joining && !joinError && room.status === 'in-game' && room.currentGameId) {
       setWarp(true);
     }
-  }, [room?.status, room?.currentGameId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [room?.status, room?.currentGameId, me?.uid, joining, joinError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { popIn('.lobby-pop'); }, [room?.players.length]);
 
@@ -190,19 +209,22 @@ export default function Lobby() {
   const startGame = async () => {
     if (!isHost || !eligible || starting) return;
     setStarting(true);
+    setStartError('');
     try {
       await setLive(code, null);
       await patchRoom(code, { status: 'in-game', currentGameId: game.id, selectedGameId: game.id });
       setWarp(true);
     } catch (e) {
       console.error('Could not start game:', e);
+      setStartError('The room service could not start this cartridge. Check your connection and retry.');
     } finally {
       window.setTimeout(() => setStarting(false), 900);
     }
   };
 
   const goPlay = () => {
-    router.push(`/room/${code}/play`);
+    setOpeningGame(true);
+    navigate(`/room/${code}/play`);
   };
 
   const backToLobby = async () => {
@@ -211,24 +233,26 @@ export default function Lobby() {
   };
   const endNight = () => patchRoom(code, { status: 'recap' });
 
-  if (ended) {
-    return (
-      <main className="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center gap-3 p-6 text-center">
-        <div className="font-display text-3xl font-extrabold">Room {code} has ended</div>
-        <p className="text-white/60">That night is over — the recap is final. Start a fresh room to play again.</p>
-        <button onClick={() => router.push('/')} className="btn-neon min-h-[44px] rounded-xl px-5 py-2.5 font-bold">
-          Start a new room
-        </button>
-      </main>
-    );
-  }
-
   if (missing) {
     return (
       <main className="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center gap-3 p-6 text-center">
         <div className="font-display text-3xl font-extrabold">Room {code} not found</div>
         <p className="text-white/60">This room has ended or the code is wrong. Double-check the code, or start a fresh room to play.</p>
-        <button onClick={() => router.push('/')} className="btn-neon min-h-[44px] rounded-xl px-5 py-2.5 font-bold">Back home</button>
+        <button onClick={() => navigate('/')} className="btn-neon min-h-[44px] rounded-xl px-5 py-2.5 font-bold">Back home</button>
+      </main>
+    );
+  }
+
+  if (!room || !me || joining || joinError) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-lg flex-col justify-center gap-3 p-6">
+        <h1 className="font-display text-3xl font-extrabold">Room {code}</h1>
+        <RoomProgress key={attempt} step={joinStep} error={joinError} onRetry={joining ? undefined : () => {
+          setJoinError('');
+          setJoinStep('Finding the room…');
+          setAttempt((value) => value + 1);
+        }} />
+        <button onClick={() => navigate('/')} className="btn-ghost min-h-[44px] px-4 font-bold">Back home</button>
       </main>
     );
   }
@@ -256,7 +280,7 @@ export default function Lobby() {
             {copied ? '✓ Copied!' : 'Copy invite link'}
           </button>
           <button
-            onClick={async () => { await leaveRoom(code); router.push('/'); }}
+            onClick={async () => { await leaveRoom(code); navigate('/'); }}
             className="min-h-[44px] rounded-xl bg-white/5 px-3 py-1.5 text-sm font-bold text-white/70 hover:bg-white/15"
           >
             Leave
@@ -265,12 +289,7 @@ export default function Lobby() {
       </header>
 
       <AuthWarning />
-
-      {full && (
-        <div className="arcade-card border-[#FB4D6D]/40 p-3 text-sm font-semibold text-[#FB4D6D]">
-          This room is full (8 players max). Ask someone to leave, or start your own room.
-        </div>
-      )}
+      {openingGame && <RoomProgress step="Opening the game…" onRetry={() => location.assign(`/room/${code}/play`)} />}
 
       <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
         <div className="relative h-[46vh] min-h-[300px] max-h-[62vh] overflow-hidden rounded-2xl border border-white/10 landscape:h-[38vh] landscape:min-h-[200px] lg:h-[62vh] lg:min-h-[340px]">
@@ -336,6 +355,10 @@ export default function Lobby() {
                   ? `Max ${game.maxPlayers} players for ${game.displayName}`
                   : `Need ${game.minPlayers}+ players to start`}
               </button>
+              {(starting || startError) && (
+                <RoomProgress step="Starting the cartridge…" error={startError}
+                  onRetry={starting ? () => location.reload() : startGame} />
+              )}
               {!eligible && (
                 <span className="text-center text-xs font-medium text-white/50">
                   {tooManyPlayers
@@ -458,7 +481,7 @@ export default function Lobby() {
       </div>
 
       {(recap || (room?.status === 'recap' && !recapHidden)) && (
-        <div
+        <div role="dialog" aria-label="Night recap" aria-modal="true"
           className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/70 p-3 sm:p-4"
           onClick={() => {
             setRecap(false);

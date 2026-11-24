@@ -1,6 +1,6 @@
 'use client';
 import React, { Component, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import {
   claimHostIfMissing,
   ensureIdentity,
@@ -11,6 +11,7 @@ import {
   patchRoom,
   setLive,
   subscribeRoom,
+  subscribeLive,
 } from '@/lib/room-store';
 import { GAMES, LazyGameScene } from '@/games';
 import { Scoreboard } from '@/components/Scoreboard';
@@ -19,6 +20,8 @@ import type { RoomMeta } from '@/lib/types';
 import { HOST_GRACE_MS } from '@/lib/room-logic';
 import { AvatarIcon } from '@/components/AvatarIcons';
 import { ConnectionIndicator } from '@/components/ConnectionIndicator';
+import { RoomProgress, joinFailure } from '@/components/RoomProgress';
+import { useRoomNavigation } from '@/lib/use-room-navigation';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -54,7 +57,7 @@ class GameErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
           </p>
           <div className="mt-2 flex flex-wrap justify-center gap-2">
             <button
-              onClick={() => this.setState({ hasError: false, error: null })}
+              onClick={() => location.reload()}
               className="btn-neon min-h-[44px] rounded-xl px-4 py-2 text-sm font-bold"
             >
               🔄 Reload cartridge
@@ -77,10 +80,16 @@ type LeaveIntent = 'lobby' | 'home' | 'server' | null;
 
 export default function Play() {
   const params = useParams();
-  const router = useRouter();
+  const navigate = useRoomNavigation();
   const code = String(params.code ?? '').toUpperCase();
   const [uid, setUid] = useState(() => (typeof window === 'undefined' ? '' : getSessionUid()));
   const [room, setRoom] = useState<RoomMeta | null>(null);
+  const [roomLoaded, setRoomLoaded] = useState(false);
+  const [liveReady, setLiveReady] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [joinStep, setJoinStep] = useState('Joining the game room…');
+  const [joining, setJoining] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [leaving, setLeaving] = useState(false);
   const intentRef = useRef<LeaveIntent>(null);
   const joinTried = useRef(false);
@@ -90,13 +99,20 @@ export default function Play() {
     let alive = true;
     void ensureIdentity().then((u) => {
       if (alive) setUid(u);
-    });
+    }).catch(() => {});
     return () => {
       alive = false;
     };
   }, []);
 
-  useEffect(() => subscribeRoom(code, setRoom), [code]);
+  useEffect(() => subscribeRoom(code, (nextRoom) => {
+    setRoom(nextRoom);
+    setRoomLoaded(true);
+  }, () => setLoadError('Could not read the room. Check your connection and retry.')), [code, attempt]);
+
+  useEffect(() => subscribeLive(code, (state) => {
+    setLiveReady(Boolean(state));
+  }, () => setLoadError('Could not read the shared game state. Check your connection and retry.')), [code, attempt]);
 
   // Deep links land on /play without ever passing through the lounge; rejoin so
   // the player exists before any game state write (rules require membership).
@@ -108,11 +124,14 @@ export default function Play() {
     }
     if (joinTried.current) return;
     joinTried.current = true;
+    setJoining(true);
     const name = sessionStorage.getItem('roomcade:name') || `Guest-${uid.slice(-4)}`;
     const avatar =
       sessionStorage.getItem('roomcade:avatarId') || sessionStorage.getItem('roomcade:color') || '#FF6B35';
-    void joinRoom(code, name, avatar).catch(() => {});
-  }, [room, uid, code]);
+    void joinRoom(code, name, avatar, setJoinStep)
+      .catch((error) => setLoadError(joinFailure(error)))
+      .finally(() => setJoining(false));
+  }, [room, uid, code, attempt]);
 
   // Host migration: the host's onDisconnect removes their player node, which
   // leaves hostId dangling. Give the host a grace window first — a reload briefly
@@ -137,10 +156,11 @@ export default function Play() {
   useEffect(() => {
     if (!room || room.status !== 'in-game' || !room.currentGameId) return;
     const game = GAMES[room.currentGameId];
-    if (!game || room.players.length < 2) return;
+    if (!game || room.players.length < game.minPlayers || !room.players.some((p) => p.uid === uid)) return;
     const uids = room.players.map((p) => p.uid);
-    void ensureLiveInitialized(code, () => game.initState(uids, room.hostId));
-  }, [code, room?.status, room?.currentGameId, room?.players.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    void ensureLiveInitialized(code, () => game.initState(uids, room.hostId))
+      .catch(() => setLoadError('Could not synchronize the cartridge. Check your connection and retry.'));
+  }, [code, room?.status, room?.currentGameId, room?.players.map((p) => p.uid).join(','), uid, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // If host resets to lobby, everyone warps back through the same portal.
   useEffect(() => {
@@ -154,6 +174,13 @@ export default function Play() {
   const game = gameId ? GAMES[gameId] : null;
   const isHost = !!room && room.hostId === uid;
   const understaffed = !!room && !!game && room.players.length > 0 && room.players.length < game.minPlayers;
+  const isMember = room?.players.some((p) => p.uid === uid);
+  const loadStep = !room ? 'Finding the room…' : !isMember || joining ? joinStep : 'Synchronizing the game…';
+  const retry = () => {
+    joinTried.current = false;
+    setLoadError('');
+    setAttempt((value) => value + 1);
+  };
 
   const finishLeaving = async () => {
     const intent = intentRef.current;
@@ -161,7 +188,7 @@ export default function Play() {
     intentRef.current = null;
     if (intent === 'home') {
       await leaveRoom(code);
-      router.push('/');
+      navigate('/');
       return;
     }
     if (intent === 'lobby' && isHost) {
@@ -172,7 +199,7 @@ export default function Play() {
         console.error('Error exiting to lobby:', e);
       }
     }
-    router.push(`/room/${code}`);
+    navigate(`/room/${code}`);
   };
 
   const requestHostLobby = () => {
@@ -231,10 +258,13 @@ export default function Play() {
 
       <div className="min-h-[60vh] flex-1">
         <GameErrorBoundary key={gameId ?? 'empty'} onBackToLobby={requestHostLobby}>
-          <Suspense fallback={<div className="arcade-card flex h-[60vh] items-center justify-center font-display text-xl font-bold text-white/60">Warping in…</div>}>
-            {!room ? (
-              <div className="arcade-card flex h-[60vh] items-center justify-center font-display text-xl font-bold text-white/60">Warping in…</div>
-            ) : gameId && game ? (
+          <Suspense fallback={<RoomProgress step="Loading the cartridge…" onRetry={() => location.reload()} />}>
+            {roomLoaded && !room ? (
+              <RoomProgress step="Finding the room…" error="Room not found. Check your code with the host." onRetry={retry} />
+            ) : !room || !isMember || joining || loadError || (game && !liveReady) ? (
+              <RoomProgress key={attempt} step={loadStep} error={loadError}
+                onRetry={joining ? undefined : retry} />
+            ) : gameId && game && room.status === 'in-game' ? (
               <LazyGameScene id={gameId} roomCode={code} />
             ) : (
               <div className="arcade-card p-6 text-center text-white/60">No game selected — head back to the lobby.</div>

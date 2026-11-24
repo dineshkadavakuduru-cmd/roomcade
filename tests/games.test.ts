@@ -88,7 +88,7 @@ test('movietrivia: full buzz-and-score cycle with distinct question order', () =
   assert.equal(reveal.correctUid, uid(2));
 });
 
-test('quickdraw: countdown → arm → react → round win → best-of-5 done, early tap loses', () => {
+test('quickdraw: countdown → arm → react → round win → first to five, including false starts', () => {
   const g = GAMES.quickdraw!;
   let s = apply(g, g.initState([uid(1), uid(2)], uid(1)), { type: 'start', uid: uid(1), payload: { playerUids: [uid(1), uid(2)] } });
   assert.equal(s.phase, 'countdown');
@@ -99,6 +99,7 @@ test('quickdraw: countdown → arm → react → round win → best-of-5 done, e
   assert.equal(early.phase, 'round-end');
   assert.equal(early.earlyLoser, uid(1));
   assert.equal(early.roundWinner, uid(2));
+  assert.equal(early.scores[uid(2)], 1);
 
   // arm can only succeed once goAt has passed
   const armedTooSoon = apply(g, s, { type: 'arm', uid: uid(1) });
@@ -108,6 +109,7 @@ test('quickdraw: countdown → arm → react → round win → best-of-5 done, e
 
   // player 1 reacts first → wins the round and scores
   let r = apply(g, armed, { type: 'react', uid: uid(1) });
+  assert.equal(apply(g, r, { type: 'react', uid: uid(1) }), r);
   r = apply(g, r, { type: 'react', uid: uid(2) });
   assert.equal(r.phase, 'round-end');
   assert.equal(r.roundWinner, uid(1));
@@ -125,7 +127,12 @@ test('quickdraw: countdown → arm → react → round win → best-of-5 done, e
   }
   assert.equal(state.phase, 'done');
   assert.equal(state.winner, uid(1));
-  assert.equal(state.scores[uid(1)] >= 5, true);
+  assert.equal(state.scores[uid(1)], 5);
+
+  const finalFalseStart = apply(g, { ...s, scores: { [uid(1)]: 0, [uid(2)]: 4 } }, { type: 'react', uid: uid(1) });
+  assert.equal(finalFalseStart.phase, 'done');
+  assert.equal(finalFalseStart.winner, uid(2));
+  assert.equal(finalFalseStart.scores[uid(2)], 5);
 });
 
 test('tugofwar: tap debounce, rope lead, and buzzer-decides path', () => {

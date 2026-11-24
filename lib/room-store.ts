@@ -14,6 +14,7 @@
 import { avatarFields, generateCode, normalizeCode, type Action, type LiveState, type Player, type RoomMeta } from './types';
 import {
   GHOST_AGE_MS,
+  HOST_GRACE_MS,
   MAX_PLAYERS,
   MAX_SCORE,
   cleanDisplayName as cleanName,
@@ -127,6 +128,7 @@ function localUid(): string {
 
 let identityUid: string | null = null;
 let identityPromise: Promise<string> | null = null;
+let restartAuth = false;
 
 /**
  * The canonical player id. In Firebase mode this is the anonymous auth uid, so
@@ -150,7 +152,8 @@ export async function ensureIdentity(): Promise<string> {
   if (!identityPromise) {
     identityPromise = (async () => {
       // If a previous attempt failed, clear the cached failure and retry once.
-      const authFn = authFailureReason() ? retryAnonymousAuth : ensureAnonymousAuth;
+      const authFn = restartAuth || authFailureReason() ? retryAnonymousAuth : ensureAnonymousAuth;
+      restartAuth = false;
       const uid = await Promise.race([
         authFn(),
         new Promise<string | null>((_, reject) =>
@@ -167,7 +170,11 @@ export async function ensureIdentity(): Promise<string> {
       // AUTH_REQUIRED because the RTDB write fails without a real auth uid.
       identityPromise = null;
       return localUid();
-    })();
+    })().catch((error) => {
+      identityPromise = null;
+      restartAuth = true;
+      throw error;
+    });
   }
   return identityPromise;
 }
@@ -176,6 +183,7 @@ export async function ensureIdentity(): Promise<string> {
 export function resetIdentityForTests(): void {
   identityUid = null;
   identityPromise = null;
+  restartAuth = false;
 }
 
 function isStale(meta: RoomMeta): boolean {
@@ -204,6 +212,7 @@ export function firebaseAuthWarning(): string | null {
 export async function retryAuth(): Promise<void> {
   identityUid = null;
   identityPromise = null;
+  restartAuth = true;
   await ensureIdentity();
 }
 
@@ -370,28 +379,33 @@ function joinError(message: string): Error {
   return new Error(message);
 }
 
-export async function joinRoom(rawCode: string, name: string, avatarColor: string): Promise<string> {
+function joinRequest<T>(request: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    request,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(joinError('JOIN_TIMEOUT')), JOIN_ROOM_TIMEOUT_MS);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+export async function joinRoom(rawCode: string, name: string, avatarColor: string, onStep?: (step: string) => void): Promise<string> {
   const code = normalizeCode(rawCode);
-  const uid = await Promise.race([
-    ensureIdentity(),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('identity-timeout')), IDENTITY_TIMEOUT_MS)
-    ),
-  ]);
+  onStep?.('Connecting to the room service…');
+  const uid = await ensureIdentity();
+  onStep?.('Checking room code…');
   if (firebaseConfigured()) {
+    if (!currentAuthUid()) throw joinError('AUTH_REQUIRED');
     const fb = getFirebase()!;
     const metaRef = ref(fb.rtdb, `rooms/${code}/meta`);
     try {
-      const snap = await Promise.race([
-        get(metaRef),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('join-room-timeout')), JOIN_ROOM_TIMEOUT_MS)
-        ),
-      ]);
+      const snap = await joinRequest(get(metaRef));
       const meta = normalizeRoomMeta(snap.val());
       if (!meta) throw joinError('ROOM_NOT_FOUND');
-      if (isStale(meta)) {
-        await reapAbandonedRoom(fb.rtdb, code, meta);
+      // A full-page navigation can briefly disconnect everyone in an active room.
+      const reconnecting = meta.players.length === 0 && Date.now() - meta.updatedAt < HOST_GRACE_MS;
+      if (isStale(meta) && !reconnecting) {
+        void reapAbandonedRoom(fb.rtdb, code, meta).catch(() => {});
         throw joinError('ROOM_NOT_FOUND');
       }
       // A recap is a finished night; don't resurrect it as a live room.
@@ -408,37 +422,31 @@ export async function joinRoom(rawCode: string, name: string, avatarColor: strin
         ? { ...existing, name: displayName, ...av, lastSeen: now, online: true, joinedAt: existing.joinedAt || now }
         : { uid, name: displayName, ...av, score: readScoreHint(code, uid), joinedAt: now, lastSeen: now, online: true };
 
+      onStep?.('Joining the player roster…');
       try {
-        await Promise.race([
-          set(ref(fb.rtdb, `rooms/${code}/meta/players/${uid}`), player),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('join-room-timeout')), JOIN_ROOM_TIMEOUT_MS)
-          ),
-        ]);
+        await joinRequest(set(ref(fb.rtdb, `rooms/${code}/meta/players/${uid}`), player));
       } catch (e) {
+        if (!isPermissionDenied(e)) throw e;
         // The capacity limit is enforced atomically by RTDB validation at the
         // players node (numChildren <= 8), so a lost race surfaces as a denial.
-        const after = normalizeRoomMeta((await get(metaRef)).val());
+        const after = normalizeRoomMeta((await joinRequest(get(metaRef))).val());
         if (after && !after.players.some((p) => p.uid === uid) && after.players.length >= MAX_PLAYERS) {
           throw joinError('ROOM_FULL');
         }
-        if (isPermissionDenied(e)) {
-          throw joinError(authFailureReason() ? 'AUTH_REQUIRED' : 'JOIN_DENIED');
-        }
-        if ((e as Error).message === 'join-room-timeout') throw joinError('JOIN_TIMEOUT');
-        throw e;
+        throw joinError(authFailureReason() ? 'AUTH_REQUIRED' : 'JOIN_DENIED');
       }
-      await update(metaRef, { updatedAt: now }).catch(() => {});
-      await registerPresence(fb.rtdb, code, uid, displayName);
+      onStep?.('Confirming your seat…');
+      await joinRequest(update(metaRef, { updatedAt: now }).catch(() => {}));
+      await joinRequest(registerPresence(fb.rtdb, code, uid, displayName));
 
       // Two clients picking the same display name at the same instant both see the
       // name as free; settle it with a second pass so the lounge never shows twins.
-      const settled = normalizeRoomMeta((await get(metaRef)).val());
+      const settled = normalizeRoomMeta((await joinRequest(get(metaRef))).val());
       if (settled) {
         const twins = settled.players.filter((p) => p.uid !== uid && p.name.toLowerCase() === displayName.toLowerCase());
         if (twins.length > 0) {
           const renamed = uniqueName(displayName, settled.players.filter((p) => p.uid !== uid).map((p) => p.name));
-          await update(ref(fb.rtdb, `rooms/${code}/meta/players/${uid}`), { name: renamed }).catch(() => {});
+          await joinRequest(update(ref(fb.rtdb, `rooms/${code}/meta/players/${uid}`), { name: renamed }).catch(() => {}));
           rememberIdentity(renamed, av);
           return uid;
         }
@@ -446,7 +454,7 @@ export async function joinRoom(rawCode: string, name: string, avatarColor: strin
       rememberIdentity(displayName, av);
       return uid;
     } catch (e) {
-      if ((e as Error).message === 'join-room-timeout') throw joinError('JOIN_TIMEOUT');
+      if (isPermissionDenied(e)) throw joinError('JOIN_DENIED');
       throw e;
     }
   }
@@ -544,7 +552,7 @@ function enqueueLocal<T>(key: string, fn: () => T): Promise<T> {
   return next;
 }
 
-export function subscribeRoom(code: string, cb: (meta: RoomMeta | null) => void): () => void {
+export function subscribeRoom(code: string, cb: (meta: RoomMeta | null) => void, onError?: (error: unknown) => void): () => void {
   const c = normalizeCode(code);
   if (firebaseConfigured()) {
     let cancelled = false;
@@ -565,11 +573,9 @@ export function subscribeRoom(code: string, cb: (meta: RoomMeta | null) => void)
           }
           cb(meta);
         },
-        () => {
-          // Transient read failure (offline): leave the last good state on screen.
-        },
+        onError,
       );
-    });
+    }).catch((error) => { if (!cancelled) onError?.(error); });
     return () => {
       cancelled = true;
       unsub?.();
@@ -738,9 +744,32 @@ export async function awardScores(code: string, awards: Record<string, number>):
   writeLocal(LS_ROOM(c), { ...meta, players, updatedAt: Date.now() }, BC(c));
 }
 
+/** Apply a cumulative target from the start of a match. Replaying a round update keeps the same total. */
+export async function settleMatchScore(code: string, player: string, score: number): Promise<void> {
+  const c = normalizeCode(code);
+  const target = Math.min(MAX_SCORE, score);
+  const uid = await ensureIdentity();
+  if (firebaseConfigured()) {
+    const fb = getFirebase()!;
+    const meta = normalizeRoomMeta((await get(ref(fb.rtdb, `rooms/${c}/meta`))).val());
+    if (meta?.hostId !== uid || meta.status !== 'in-game') return;
+    await runTransaction(ref(fb.rtdb, `rooms/${c}/meta/players/${player}`), (current) => {
+      if (!current || current.score >= target) return undefined;
+      return { ...current, score: target };
+    }, { applyLocally: false });
+    return;
+  }
+  await enqueueLocal(`room:${c}`, () => {
+    const meta = readLocal<RoomMeta>(LS_ROOM(c));
+    if (meta?.hostId !== uid || meta.status !== 'in-game') return;
+    const players = meta.players.map((p) => p.uid === player ? { ...p, score: Math.max(p.score, target) } : p);
+    writeLocal(LS_ROOM(c), { ...meta, players, updatedAt: Date.now() }, BC(c));
+  });
+}
+
 // ---- Live (ephemeral per-game) state ----
 
-export function subscribeLive(code: string, cb: (s: LiveState | null) => void): () => void {
+export function subscribeLive(code: string, cb: (s: LiveState | null) => void, onError?: (error: unknown) => void): () => void {
   const c = normalizeCode(code);
   if (firebaseConfigured()) {
     let cancelled = false;
@@ -752,11 +781,9 @@ export function subscribeLive(code: string, cb: (s: LiveState | null) => void): 
       unsub = onValue(
         r,
         (snap) => cb(snap.exists() ? parseLiveState(snap.val()) : null),
-        () => {
-          // Keep the last known state on transient failures.
-        },
+        onError,
       );
-    });
+    }).catch((error) => { if (!cancelled) onError?.(error); });
     return () => {
       cancelled = true;
       unsub?.();

@@ -9,11 +9,20 @@ import { useEffect, useRef } from 'react';
  */
 export function PortalTransition({ active, label, onDone }: { active: boolean; label: string; onDone?: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const done = useRef(onDone);
+  useEffect(() => { done.current = onDone; }, [onDone]);
 
   useEffect(() => {
     if (!active || !ref.current) return;
     let cancelled = false;
-    (async () => {
+    let completed = false;
+    const finish = () => {
+      if (cancelled || completed) return;
+      completed = true;
+      done.current?.();
+    };
+    const fallback = window.setTimeout(finish, 2500);
+    void (async () => {
       const anime = (await import('animejs')).default;
       if (cancelled) return;
       const tl = anime.timeline({ autoplay: true });
@@ -78,13 +87,14 @@ export function PortalTransition({ active, label, onDone }: { active: boolean; l
           opacity: [1, 0],
           duration: 350,
           easing: 'easeOutQuad',
-          complete: () => onDone?.(),
+          complete: finish,
         });
-    })();
+    })().catch(finish);
     return () => {
       cancelled = true;
+      window.clearTimeout(fallback);
     };
-  }, [active, onDone]);
+  }, [active]);
 
   if (!active) return null;
   const bits = Array.from({ length: 26 }, (_, i) => ({
@@ -102,7 +112,7 @@ export function PortalTransition({ active, label, onDone }: { active: boolean; l
         <span key={i} className="portal-bit absolute left-1/2 top-1/2 rounded-full"
           style={{ width: b.s, height: b.s, background: b.c }} />
       ))}
-      <div className="font-display text-3xl font-extrabold tracking-tight text-white drop-shadow-lg">{label}</div>
+      <div role="status" className="font-display text-3xl font-extrabold tracking-tight text-white drop-shadow-lg">{label}</div>
     </div>
   );
 }

@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --tsconfig tsconfig.test.json --test tests/*.test.ts",
-    "test:multiplayer": "tsx --tsconfig tsconfig.test.json scripts/verify-multiplayer.ts"
+    "test:multiplayer": "tsx --tsconfig tsconfig.test.json scripts/verify-multiplayer.ts",
+    "test:room-lifecycle": "tsx --tsconfig tsconfig.test.json scripts/verify-room-lifecycle.ts"
   },
   "dependencies": {
     "@react-three/drei": "^9.114.3",

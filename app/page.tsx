@@ -1,29 +1,33 @@
 'use client';
-import { useMemo, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRoomNavigation } from '@/lib/use-room-navigation';
 import { AVATARS, AVATAR_NAMES, DEFAULT_AVATAR_ID, avatarIdFor, resolveAvatar } from '@/lib/types';
 import { createRoom, joinRoom } from '@/lib/room-store';
 import { popIn, staggerReveal } from '@/lib/anime';
-import { useEffect } from 'react';
 import { AvatarIcon } from '@/components/AvatarIcons';
 import { AuthWarning } from '@/components/AuthWarning';
-import { GAME_META, type GameMeta } from '@/lib/games';
+import { GAME_META } from '@/lib/games';
+
+import { RoomProgress, joinFailure } from '@/components/RoomProgress';
 
 type CreateState = 'idle' | 'loading' | 'success' | 'error' | 'timeout';
-type JoinState = 'idle' | 'loading' | 'success' | 'error' | 'timeout';
+
 
 export default function Landing() {
-  const router = useRouter();
+  const navigate = useRoomNavigation();
   const [name, setName] = useState('');
   const [avatarId, setAvatarId] = useState<string>(DEFAULT_AVATAR_ID);
   const avatar = resolveAvatar(avatarId);
   const color = avatar.color;
   const [code, setCode] = useState('');
   const [createState, setCreateState] = useState<CreateState>('idle');
-  const [joinState, setJoinState] = useState<JoinState>('idle');
+  const [joinStep, setJoinStep] = useState('');
+  const [joinError, setJoinError] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [joinedCode, setJoinedCode] = useState('');
+  const joinForm = useRef<HTMLFormElement>(null);
   const [err, setErr] = useState('');
   const [selectedGame, setSelectedGame] = useState('movietrivia');
-  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     setName(sessionStorage.getItem('roomcade:name') ?? '');
@@ -39,7 +43,7 @@ export default function Landing() {
     try {
       const { code: c } = await createRoom(name.trim(), color, selectedGame);
       setCreateState('success');
-      router.push(`/room/${c}`);
+      navigate(`/room/${c}`);
     } catch (e: any) {
       const msg = e?.message ?? '';
       if (msg === 'AUTH_REQUIRED') {
@@ -54,55 +58,52 @@ export default function Landing() {
       }
       else setErr(msg || 'Could not create room.');
       setCreateState('error');
-      setRetryCount(r => r + 1);
     }
-  }, [name, color, selectedGame, router]);
+  }, [name, color, selectedGame, navigate]);
 
-  const doJoin = useCallback(async () => {
-    if (!name.trim()) { setErr('Pick a display name first.'); return; }
-    if (code.trim().length < 4) { setErr('Enter the 5-letter room code.'); return; }
-    setJoinState('loading');
-    setErr('');
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const keepFormVisible = () => {
+      const form = joinForm.current;
+      if (!viewport || !form?.contains(document.activeElement)) return;
+      const bounds = form.querySelector('[data-join-controls]')?.getBoundingClientRect();
+      if (!bounds || bounds.height + 12 >= viewport.height) return;
+      if (bounds.bottom > viewport.offsetTop + viewport.height) {
+        window.scrollBy(0, bounds.bottom - viewport.offsetTop - viewport.height + 12);
+      } else if (bounds.top < viewport.offsetTop) {
+        window.scrollBy(0, bounds.top - viewport.offsetTop - 12);
+      }
+    };
+    viewport?.addEventListener('resize', keepFormVisible);
+    return () => viewport?.removeEventListener('resize', keepFormVisible);
+  }, []);
+
+  const doJoin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (joining || !name.trim() || code.trim().length !== 5) return;
+    setJoining(true);
+    setJoinError('');
     try {
       const c = code.trim().toUpperCase();
-      await joinRoom(c, name.trim(), color);
-      setJoinState('success');
-      router.push(`/room/${c}`);
-    } catch (e: any) {
-      const msg = e.message ?? 'Could not join room.';
-      if (msg === 'ROOM_NOT_FOUND') setErr('Room not found — the code is wrong or the room expired.');
-      else if (msg === 'ROOM_FULL') setErr('Room is full (8 max).');
-      else if (msg === 'ROOM_ENDED') setErr('That night already ended. Start a fresh room.');
-      else if (msg === 'AUTH_REQUIRED') {
-        setErr('The room service is temporarily unavailable. Please try again in a moment, or check the warning banner above.');
-        console.warn('[Roomcade] Join failed: anonymous auth not enabled. See docs/FIREBASE_HARDENING.md.');
-      }
-      else if (msg === 'JOIN_DENIED') setErr('The room refused the join — check the code and try again.');
-      else if (msg === 'JOIN_TIMEOUT' || msg === 'identity-timeout') setErr('Request timed out. Check your connection and try again.');
-      else if (msg.includes('Permission denied') || msg.includes('permission-denied')) {
-        setErr('The room service is temporarily unavailable. Please try again in a moment, or check the warning banner above.');
-        console.warn('[Roomcade] Join failed: permission denied. See docs/FIREBASE_HARDENING.md.');
-      }
-      else setErr(msg);
-      setJoinState('error');
-      setRetryCount(r => r + 1);
+      await joinRoom(c, name.trim(), color, setJoinStep);
+      setJoinedCode(c);
+      setJoinStep('Opening the lounge…');
+      navigate(`/room/${c}`);
+    } catch (error) {
+      setJoinError(joinFailure(error));
+      setJoining(false);
     }
-  }, [name, code, color, router]);
+  };
 
-  const resetCreate = useCallback(() => {
+  const resetCreate = () => {
     setCreateState('idle');
     setErr('');
-  }, []);
-
-  const resetJoin = useCallback(() => {
-    setJoinState('idle');
-    setErr('');
-  }, []);
+  };
 
   const games = GAME_META;
 
   return (
-    <main className="page-fade relative mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center px-4 py-10">
+    <main className="page-fade relative mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center px-4 py-4 md:py-10">
       {/* Animated background: slow gradient mesh + floating particles */}
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden>
         <div className="mesh-blob absolute -left-24 top-10 h-72 w-72 rounded-full bg-[#FF6B35]/12 blur-3xl" />
@@ -121,42 +122,42 @@ export default function Landing() {
         ))}
       </div>
       <div className="landing-hero text-center">
-          <div className="font-display inline-block rounded-full border border-white/15 bg-white/5 px-4 py-1 text-xs font-bold uppercase tracking-[.25em] text-white/70">
-            No accounts · No installs · 2–8 players
-          </div>
-        <h1 className="logo-glow font-display mt-4 text-5xl font-extrabold leading-none tracking-tight md:text-7xl">
+        <h1 className="logo-glow font-display text-4xl font-extrabold leading-none tracking-tight md:text-7xl">
           ROOM<span style={{ background: 'linear-gradient(135deg,#FF8A00,#FF6B35 45%,#FF54BB)', WebkitBackgroundClip: 'text', color: 'transparent' }}>CADE</span>
         </h1>
-        <p className="mx-auto mt-3 max-w-xl text-white/70">
-          Create a room, get a short code, friends join from a chat link. Hang in a 3D lounge,
-          pick a game cartridge, play the night — scores carry across games.
-        </p>
-      </div>
-
-      <div className="marquee mt-8 w-full py-2 text-sm font-bold uppercase tracking-[.2em] text-white/60" aria-hidden>
-        <div className="marquee-track">
-          {Array.from({ length: 2 }).map((_, k) => (
-            <span key={k}>
-              {'No accounts ✦ No installs ✦ 2–8 players ✦ Scores carry all night ✦ '.repeat(3)}
-            </span>
-          ))}
-        </div>
       </div>
 
       <div className="mt-4 w-full">
         <AuthWarning />
       </div>
 
-      <div className="mt-8 grid w-full gap-4 md:grid-cols-2">
+      <div className="mt-3 grid w-full gap-4 md:mt-8 md:grid-cols-2">
+        <form ref={joinForm} onSubmit={doJoin} aria-labelledby="join-title" className="arcade-card self-start p-4 md:row-span-2 md:p-5">
+          <div data-join-controls className="space-y-2">
+            <h2 id="join-title" className="font-display text-lg font-extrabold">Join with a code</h2>
+            <label className="block text-sm font-semibold" htmlFor="display-name">Display name</label>
+            <input id="display-name" autoComplete="nickname" value={name} onChange={(e) => setName(e.target.value)} maxLength={16} placeholder="Display name"
+              className="min-h-[44px] w-full rounded-xl bg-black/40 px-3 py-2.5 text-base outline-none placeholder:text-white/30 focus:ring-2 focus:ring-[#FF6B35]" />
+            <label className="block text-sm font-semibold" htmlFor="room-code">Room code</label>
+            <div className="flex gap-2">
+              <input id="room-code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={5}
+                placeholder="ABCDE" autoCapitalize="characters" autoComplete="off" spellCheck={false} enterKeyHint="go"
+                className="room-code min-w-0 flex-1 rounded-xl bg-black/40 px-3 py-2 text-center text-lg font-bold uppercase outline-none placeholder:text-white/25 focus:ring-2 focus:ring-[#FF3D81]" />
+              <button type="submit" disabled={joining || !name.trim() || code.trim().length !== 5}
+                className="btn-ghost min-h-[44px] shrink-0 px-5 py-2 font-display font-extrabold text-[#FF54BB] disabled:opacity-50">
+                {joining ? 'Joining…' : joinError ? 'Retry join' : 'Join'}
+              </button>
+            </div>
+          </div>
+          {joinStep && <RoomProgress step={joinStep} error={joinError}
+            onRetry={joinedCode ? () => location.assign(`/room/${joinedCode}`) : undefined} />}
+        </form>
         <div className="landing-card arcade-card p-5">
           <div className="flex items-center justify-between">
             <div className="font-display text-lg font-extrabold">Your avatar</div>
             <span className="text-xs font-semibold text-white/50">Pick character & color</span>
           </div>
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={16} placeholder="Display name"
-            className="mt-2 w-full rounded-xl bg-black/40 px-3 py-2.5 outline-none placeholder:text-white/30 focus:ring-2 focus:ring-[#FF6B35]" />
-          
-<div className="mt-3.5 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+          <div className="mt-3.5 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
               <div
                 className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border-2 text-2xl shadow-lg transition-transform hover:scale-105"
                 style={{
@@ -206,12 +207,11 @@ export default function Landing() {
               );
             })}
           </div>
-          {err && <p className="mt-2 text-sm font-semibold text-[#FB4D6D]">{err}</p>}
         </div>
-        <div className="flex flex-col gap-4">
-          <div className="landing-card arcade-card p-5">
+        <div className="landing-card arcade-card p-5">
             <div className="font-display text-lg font-extrabold">Start a game night</div>
             <div className="text-xs text-white/60">Cartridge: <span className="font-bold" style={{ color: games.find((g) => g.id === selectedGame)?.accent }}>{games.find((g) => g.id === selectedGame)?.displayName}</span></div>
+            {err && <p role="alert" className="mt-2 text-sm font-semibold text-[#FB4D6D]">{err}</p>}
             <div className="relative">
               {createState === 'loading' && (
                 <div className="flex items-center justify-center gap-3 py-4 text-white/70 text-sm font-medium">
@@ -238,33 +238,11 @@ export default function Landing() {
               )}
             </div>
           </div>
-          <div className="landing-card arcade-card p-5">
-            <div className="font-display text-lg font-extrabold">Join with a code</div>
-            <div className="mt-2 flex gap-2">
-              <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={6} placeholder="ABCDE"
-                className="room-code min-w-0 flex-1 rounded-xl bg-black/40 px-3 py-2.5 text-center text-xl font-bold uppercase outline-none placeholder:text-white/25 focus:ring-2 focus:ring-[#FF3D81]" />
-              {joinState === 'loading' && (
-                <div className="flex items-center justify-center gap-2 px-3 py-2.5 text-white/70 text-sm font-medium">
-                  <span className="flex h-5 w-5 animate-spin rounded-full border-2 border-[#FF54BB] border-t-transparent" />
-                  Joining…
-                </div>
-              )}
-              <button
-                onClick={joinState === 'loading' ? undefined : doJoin}
-                disabled={joinState === 'loading' || !name.trim() || code.trim().length < 4}
-                className="btn-ghost min-h-[44px] shrink-0 px-5 py-2.5 font-display font-extrabold text-[#FF54BB] hover:bg-[#FF54BB]/20 disabled:opacity-50"
-              >
-                {joinState === 'loading' ? '' : joinState === 'success' ? '✓ Joined!' : joinState === 'error' ? '✕ Try again' : joinState === 'timeout' ? '⏱ Timeout — retry' : 'Join'}
-              </button>
-            </div>
-            {joinState === 'error' && (
-              <button onClick={resetJoin} className="btn-ghost mt-2 w-full text-sm font-semibold text-white/70 hover:text-white">
-                Dismiss & retry
-              </button>
-            )}
-          </div>
-        </div>
       </div>
+
+      <p className="mt-6 max-w-xl text-center text-sm text-white/70">
+        Share a room code or invite link with up to eight players. Scores carry across games.
+      </p>
 
       <div className="mt-8 w-full text-center">
         <div className="font-display text-sm font-bold uppercase tracking-widest text-white/50">Choose starting cartridge (click any to select)</div>
